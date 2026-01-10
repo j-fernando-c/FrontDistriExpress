@@ -1,12 +1,7 @@
 // src/pages/Clients.jsx
-import { useState } from "react";
-import {
-  FiSearch,
-  FiEye,
-  FiEdit2,
-  FiTrash2,
-  FiUserPlus,
-} from "react-icons/fi";
+import { useState, useEffect } from "react";
+import { FiSearch, FiEye, FiEdit2, FiTrash2, FiUserPlus } from "react-icons/fi";
+import { clientesService } from "../services/clientesService";
 
 const COLOMBIA_CITIES = [
   "Bogotá",
@@ -22,36 +17,27 @@ const COLOMBIA_CITIES = [
 ];
 
 export default function Clients() {
-  const [clients, setClients] = useState([
-    {
-      id: 1,
-      nombres: "Juan Carlos",
-      apellidos: "Pérez García",
-      email: "juan.perez@email.com",
-      telefono: "3001234567",
-      direccion: "Cra 10 #20-30",
-      ciudad: "Medellín",
-      tipoCliente: "Natural",
-      nit: "", // para jurídico
-      documento: "1030123456", // ✅ para natural
-      totalCompras: 2450000,
-      estado: "Activo",
-    },
-    {
-      id: 2,
-      nombres: "Distribuidora La Central",
-      apellidos: "",
-      email: "contacto@central.com",
-      telefono: "3019876543",
-      direccion: "Av. 80 #45-10",
-      ciudad: "Bogotá",
-      tipoCliente: "Jurídico",
-      nit: "900123456-1",
-      documento: "",
-      totalCompras: 5680000,
-      estado: "Activo",
-    },
-  ]);
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadClients();
+  }, []);
+
+  const loadClients = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await clientesService.getAll();
+      setClients(response.data || []);
+    } catch (err) {
+      setError(err.message || "Error al cargar clientes");
+      console.error("Error cargando clientes:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -234,63 +220,61 @@ export default function Clients() {
     return true;
   };
 
-  const saveClient = () => {
+  const saveClient = async () => {
     if (!validateForm()) return;
 
-    if (editingId) {
-      // editar
+    const data = {
+      tipoCliente: formData.tipoCliente,
+      nombres: formData.nombres,
+      apellidos: formData.apellidos,
+      email: formData.email,
+      telefono: formData.telefono,
+      direccion: formData.direccion,
+      ciudad: formData.ciudad,
+      nit: formData.tipoCliente === "Jurídico" ? formData.nit : null,
+      documento: formData.tipoCliente === "Natural" ? formData.documento : null,
+    };
+
+    try {
+      if (editingId) {
+        await clientesService.update(editingId, data);
+      } else {
+        await clientesService.create(data);
+      }
+      await loadClients();
+      setIsFormOpen(false);
+      setIsViewMode(false);
+    } catch (err) {
+      alert(err.message || "Error al guardar cliente");
+    }
+  };
+
+  const deleteClient = async (id) => {
+    if (!confirm("¿Seguro que deseas eliminar este cliente?")) return;
+    try {
+      await clientesService.delete(id);
+      setClients((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar cliente");
+    }
+  };
+
+  const toggleEstado = async (id) => {
+    try {
+      await clientesService.toggleEstado(id);
       setClients((prev) =>
         prev.map((c) =>
-          c.id === editingId
+          c.id === id
             ? {
                 ...c,
-                ...formData,
-                // mantener consistencia
-                nit: formData.tipoCliente === "Jurídico" ? formData.nit : "",
-                documento:
-                  formData.tipoCliente === "Natural" ? formData.documento : "",
+                estado: c.estado === "Activo" ? "Inactivo" : "Activo",
               }
             : c
         )
       );
-    } else {
-      // crear
-      const newId = clients.length
-        ? Math.max(...clients.map((c) => c.id)) + 1
-        : 1;
-
-      const newClient = {
-        id: newId,
-        ...formData,
-        nit: formData.tipoCliente === "Jurídico" ? formData.nit : "",
-        documento: formData.tipoCliente === "Natural" ? formData.documento : "",
-        totalCompras: 0, // queda en el objeto, pero ya NO se muestra en tabla
-        estado: "Activo",
-      };
-
-      setClients((prev) => [...prev, newClient]);
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
     }
-
-    setIsFormOpen(false);
-    setIsViewMode(false);
-  };
-
-  const deleteClient = (id) => {
-    if (!confirm("¿Seguro que deseas eliminar este cliente?")) return;
-    setClients((prev) => prev.filter((c) => c.id !== id));
-  };
-
-  const toggleEstado = (id) => {
-    setClients((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              estado: c.estado === "Activo" ? "Inactivo" : "Activo",
-            }
-          : c
-      )
-    );
   };
 
   // ===== RENDER =====
@@ -350,80 +334,101 @@ export default function Clients() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedClients.map((client) => (
-              <tr
-                key={client.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3">
-                  <div className="font-semibold">
-                    {client.nombres} {client.apellidos}
-                  </div>
-                </td>
-
-                {/* ✅ correo / número */}
-                <td className="p-3">{client.email}</td>
-                <td className="p-3">{client.telefono}</td>
-
-                <td className="p-3">{client.ciudad}</td>
-                <td className="p-3">{client.tipoCliente}</td>
-
-                {/* ✅ documento/nit */}
-                <td className="p-3">
-                  {client.tipoCliente === "Jurídico"
-                    ? client.nit || "-"
-                    : client.documento || "-"}
-                </td>
-
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(client.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${
-                      client.estado === "Activo"
-                        ? "bg-green-600 text-black hover:bg-green-500"
-                        : "bg-red-600 text-black hover:bg-red-500"
-                    }`}
-                  >
-                    {client.estado}
-                  </button>
-                </td>
-
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    {/* Ver (modo lectura) */}
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openForm(client, true)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    {/* Editar */}
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openForm(client, false)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    {/* Eliminar */}
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteClient(client.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={8} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando clientes...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedClients.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={8} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadClients}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedClients.length === 0 ? (
               <tr>
                 <td colSpan={8} className="p-4 text-center text-neutral-400">
                   No se encontraron clientes.
                 </td>
               </tr>
+            ) : (
+              paginatedClients.map((client) => (
+                <tr
+                  key={client.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3">
+                    <div className="font-semibold">
+                      {client.nombres} {client.apellidos}
+                    </div>
+                  </td>
+
+                  {/* ✅ correo / número */}
+                  <td className="p-3">{client.email}</td>
+                  <td className="p-3">{client.telefono}</td>
+
+                  <td className="p-3">{client.ciudad}</td>
+                  <td className="p-3">{client.tipoCliente}</td>
+
+                  {/* ✅ documento/nit */}
+                  <td className="p-3">
+                    {client.tipoCliente === "Jurídico"
+                      ? client.nit || "-"
+                      : client.documento || "-"}
+                  </td>
+
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(client.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${
+                        client.estado === "Activo"
+                          ? "bg-green-600 text-black hover:bg-green-500"
+                          : "bg-red-600 text-black hover:bg-red-500"
+                      }`}
+                    >
+                      {client.estado}
+                    </button>
+                  </td>
+
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      {/* Ver (modo lectura) */}
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openForm(client, true)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      {/* Editar */}
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openForm(client, false)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      {/* Eliminar */}
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteClient(client.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -450,21 +455,19 @@ export default function Clients() {
               Anterior
             </button>
 
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-              (page) => (
-                <button
-                  key={page}
-                  onClick={() => goToPage(page)}
-                  className={`px-3 py-1 rounded-lg border border-neutral-700 ${
-                    page === currentPage
-                      ? "bg-green-600 text-black"
-                      : "bg-neutral-800 hover:bg-neutral-700"
-                  }`}
-                >
-                  {page}
-                </button>
-              )
-            )}
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => goToPage(page)}
+                className={`px-3 py-1 rounded-lg border border-neutral-700 ${
+                  page === currentPage
+                    ? "bg-green-600 text-black"
+                    : "bg-neutral-800 hover:bg-neutral-700"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
 
             <button
               onClick={() => goToPage(currentPage + 1)}
@@ -498,9 +501,7 @@ export default function Clients() {
                 <select
                   className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
                   value={formData.tipoCliente}
-                  onChange={(e) =>
-                    handleChange("tipoCliente", e.target.value)
-                  }
+                  onChange={(e) => handleChange("tipoCliente", e.target.value)}
                   disabled={isViewMode}
                 >
                   <option value="Natural">Natural</option>
@@ -531,9 +532,7 @@ export default function Clients() {
                     type="text"
                     className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
                     value={formData.documento}
-                    onChange={(e) =>
-                      handleChange("documento", e.target.value)
-                    }
+                    onChange={(e) => handleChange("documento", e.target.value)}
                     disabled={isViewMode}
                   />
                 </div>
@@ -558,7 +557,8 @@ export default function Clients() {
               {/* Apellidos */}
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-neutral-300">
-                  Apellidos o razon social<span className="text-red-500">*</span>
+                  Apellidos o razon social
+                  <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"

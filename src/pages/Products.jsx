@@ -1,6 +1,7 @@
 // src/pages/Products.jsx
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { FiSearch, FiPlus, FiEye, FiEdit2, FiTrash2 } from "react-icons/fi";
+import { productosService } from "../services/productosService";
 
 export default function Products() {
   // ====== Listas (quemadas por ahora) ======
@@ -31,35 +32,27 @@ export default function Products() {
   );
 
   // ====== Data ======
-  const [products, setProducts] = useState([
-    {
-      id: 1,
-      name: "Arroz Integral",
-      category: "Granos y Cereales",
-      unit: "Kilos",
-      qty: 10,
-      price: 4800,
-      estado: "Activo",
-    },
-    {
-      id: 2,
-      name: "Aceite de Oliva",
-      category: "Aceites y Vinagres",
-      unit: "Mililitros",
-      qty: 500,
-      price: 12900,
-      estado: "Activo",
-    },
-    {
-      id: 3,
-      name: "Harina de Trigo",
-      category: "Harinas",
-      unit: "Libras",
-      qty: 2,
-      price: 6200,
-      estado: "Inactivo",
-    },
-  ]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const loadProducts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await productosService.getAll();
+      setProducts(response.data || []);
+    } catch (err) {
+      setError(err.message || "Error al cargar productos");
+      console.error("Error cargando productos:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ====== UI state ======
   const [search, setSearch] = useState("");
@@ -93,9 +86,15 @@ export default function Products() {
     );
   });
 
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredProducts.length / itemsPerPage)
+  );
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedProducts = filteredProducts.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedProducts = filteredProducts.slice(
+    startIndex,
+    startIndex + itemsPerPage
+  );
 
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
@@ -167,21 +166,25 @@ export default function Products() {
   const validate = () => {
     const newErrors = {};
 
-    if (!formData.name.trim()) newErrors.name = "El nombre del producto es obligatorio";
-    if (!formData.category.trim()) newErrors.category = "La categoría es obligatoria";
+    if (!formData.name.trim())
+      newErrors.name = "El nombre del producto es obligatorio";
+    if (!formData.category.trim())
+      newErrors.category = "La categoría es obligatoria";
 
     if (!formData.qty.toString().trim()) {
       newErrors.qty = "La cantidad es obligatoria";
     } else {
       const n = Number(formData.qty);
-      if (Number.isNaN(n) || n <= 0) newErrors.qty = "La cantidad debe ser mayor a 0";
+      if (Number.isNaN(n) || n <= 0)
+        newErrors.qty = "La cantidad debe ser mayor a 0";
     }
 
     if (!formData.price.toString().trim()) {
       newErrors.price = "El precio unitario es obligatorio";
     } else {
       const n = Number(formData.price);
-      if (Number.isNaN(n) || n < 0) newErrors.price = "El precio debe ser 0 o mayor";
+      if (Number.isNaN(n) || n < 0)
+        newErrors.price = "El precio debe ser 0 o mayor";
     }
 
     if (!formData.unit) newErrors.unit = "La unidad es obligatoria";
@@ -195,7 +198,7 @@ export default function Products() {
     return Number.isFinite(n) ? n : 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (isViewMode) return;
     if (!validate()) return;
@@ -208,37 +211,43 @@ export default function Products() {
       price: toNumberSafe(formData.price),
     };
 
-    if (editingId) {
-      setProducts((prev) =>
-        prev.map((p) => (p.id === editingId ? { ...p, ...data } : p))
-      );
-    } else {
-      const newId = products.length ? Math.max(...products.map((p) => p.id)) + 1 : 1;
-
-      // 👇 al registrar SIEMPRE queda Activo
-      setProducts((prev) => [
-        ...prev,
-        { id: newId, ...data, estado: "Activo" },
-      ]);
+    try {
+      if (editingId) {
+        await productosService.update(editingId, data);
+      } else {
+        await productosService.create(data);
+      }
+      await loadProducts();
+      closeModal();
+    } catch (err) {
+      alert(err.message || "Error al guardar producto");
     }
-
-    closeModal();
   };
 
-  const deleteProduct = (id) => {
+  const deleteProduct = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar este producto?")) return;
-    setProducts((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await productosService.delete(id);
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar producto");
+    }
   };
 
-  // Estado SOLO desde tabla
-  const toggleEstado = (id) => {
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? { ...p, estado: p.estado === "Activo" ? "Inactivo" : "Activo" }
-          : p
-      )
-    );
+  const toggleEstado = async (id) => {
+    try {
+      const product = products.find((p) => p.id === id);
+      await productosService.toggleEstado(id);
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...p, estado: p.estado === "Activo" ? "Inactivo" : "Activo" }
+            : p
+        )
+      );
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
+    }
   };
 
   const money = (n) =>
@@ -304,64 +313,87 @@ export default function Products() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedProducts.map((p) => (
-              <tr
-                key={p.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3 font-medium text-white">{p.name}</td>
-                <td className="p-3 text-neutral-300">{p.category}</td>
-                <td className="p-3 text-neutral-300">{p.unit}</td>
-                <td className="p-3 text-neutral-300">{p.qty}</td>
-                <td className="p-3 text-green-400 font-semibold">{money(p.price)}</td>
-
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(p.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
-                      ${
-                        p.estado === "Activo"
-                          ? "bg-green-600 text-black hover:bg-green-500"
-                          : "bg-red-600 text-black hover:bg-red-500"
-                      }`}
-                  >
-                    {p.estado}
-                  </button>
-                </td>
-
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openView(p)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openEdit(p)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteProduct(p.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando productos...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedProducts.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={7} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadProducts}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedProducts.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-4 text-center text-neutral-400">
                   No se encontraron productos.
                 </td>
               </tr>
+            ) : (
+              paginatedProducts.map((p) => (
+                <tr
+                  key={p.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3 font-medium text-white">{p.name}</td>
+                  <td className="p-3 text-neutral-300">{p.category}</td>
+                  <td className="p-3 text-neutral-300">{p.unit}</td>
+                  <td className="p-3 text-neutral-300">{p.qty}</td>
+                  <td className="p-3 text-green-400 font-semibold">
+                    {money(p.price)}
+                  </td>
+
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(p.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
+                      ${
+                        p.estado === "Activo"
+                          ? "bg-green-600 text-black hover:bg-green-500"
+                          : "bg-red-600 text-black hover:bg-red-500"
+                      }`}
+                    >
+                      {p.estado}
+                    </button>
+                  </td>
+
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openView(p)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openEdit(p)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteProduct(p.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -443,9 +475,9 @@ export default function Products() {
                   <input
                     type="text"
                     name="name"
-                    className={`${inputBase} ${errors.name ? "border-red-500" : ""} ${
-                      isViewMode ? disabledInput : ""
-                    }`}
+                    className={`${inputBase} ${
+                      errors.name ? "border-red-500" : ""
+                    } ${isViewMode ? disabledInput : ""}`}
                     placeholder="Nombre del producto"
                     value={formData.name}
                     onChange={handleChange}
@@ -462,9 +494,9 @@ export default function Products() {
                   </label>
                   <select
                     name="unit"
-                    className={`${inputBase} ${errors.unit ? "border-red-500" : ""} ${
-                      isViewMode ? disabledInput : ""
-                    }`}
+                    className={`${inputBase} ${
+                      errors.unit ? "border-red-500" : ""
+                    } ${isViewMode ? disabledInput : ""}`}
                     value={formData.unit}
                     onChange={handleChange}
                     disabled={isViewMode}
@@ -504,7 +536,9 @@ export default function Products() {
                     ))}
                   </select>
                   {errors.category && (
-                    <p className="text-xs text-red-400 mt-1">{errors.category}</p>
+                    <p className="text-xs text-red-400 mt-1">
+                      {errors.category}
+                    </p>
                   )}
                 </div>
 
@@ -515,9 +549,9 @@ export default function Products() {
                   <input
                     type="number"
                     name="qty"
-                    className={`${inputBase} ${errors.qty ? "border-red-500" : ""} ${
-                      isViewMode ? disabledInput : ""
-                    }`}
+                    className={`${inputBase} ${
+                      errors.qty ? "border-red-500" : ""
+                    } ${isViewMode ? disabledInput : ""}`}
                     value={formData.qty}
                     onChange={handleChange}
                     disabled={isViewMode}
