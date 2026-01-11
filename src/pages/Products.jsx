@@ -2,6 +2,7 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { FiSearch, FiPlus, FiEye, FiEdit2, FiTrash2 } from "react-icons/fi";
 import { productosService } from "../services/productosService";
+import { categoria_productosService } from "../services/categoria_productosService";
 
 export default function Products() {
   // ====== Listas (quemadas por ahora) ======
@@ -17,38 +18,43 @@ export default function Products() {
     []
   );
 
-  const CATEGORIES = useMemo(
-    () => [
-      "Granos y Cereales",
-      "Aceites y Vinagres",
-      "Condimentos",
-      "Harinas",
-      "Legumbres",
-      "Bebidas",
-      "Frutas Secas",
-      "Otros",
-    ],
-    []
-  );
-
   // ====== Data ======
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    loadProducts();
+    loadData();
   }, []);
 
-  const loadProducts = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await productosService.getAll();
-      setProducts(response.data || []);
+
+      const [productsResponse, categoriesResponse] = await Promise.all([
+        productosService.getAll(),
+        categoria_productosService.getAll(),
+      ]);
+
+      const categoriesData = categoriesResponse.data || [];
+
+      const productsData = (productsResponse.data || []).map((p) => ({
+        id: p.id,
+        name: p.nombre,
+        category: p.categoria_nombre || "Sin categoría",
+        unit: p.descripcion,
+        qty: p.cantidad,
+        price: p.precio,
+        estado: p.estado === "ACTIVO" ? "Activo" : "Inactivo",
+      }));
+
+      setCategories(categoriesData);
+      setProducts(productsData);
     } catch (err) {
-      setError(err.message || "Error al cargar productos");
-      console.error("Error cargando productos:", err);
+      setError(err.message || "Error al cargar datos");
+      console.error("Error cargando datos:", err);
     } finally {
       setLoading(false);
     }
@@ -80,7 +86,7 @@ export default function Products() {
   const filteredProducts = products.filter((p) => {
     const q = search.toLowerCase();
     return (
-      p.name.toLowerCase().includes(q) ||
+      (p.name || "").toLowerCase().includes(q) ||
       (p.category || "").toLowerCase().includes(q) ||
       (p.unit || "").toLowerCase().includes(q)
     );
@@ -203,12 +209,14 @@ export default function Products() {
     if (isViewMode) return;
     if (!validate()) return;
 
+    const categoryObj = categories.find((c) => c.nombre === formData.category);
+
     const data = {
-      name: formData.name.trim(),
-      category: formData.category.trim(),
-      unit: formData.unit,
-      qty: toNumberSafe(formData.qty),
-      price: toNumberSafe(formData.price),
+      nombre: formData.name.trim(),
+      categoria_id: categoryObj ? categoryObj.id : null,
+      descripcion: formData.unit,
+      cantidad: toNumberSafe(formData.qty),
+      precio: toNumberSafe(formData.price),
     };
 
     try {
@@ -217,7 +225,7 @@ export default function Products() {
       } else {
         await productosService.create(data);
       }
-      await loadProducts();
+      await loadData();
       closeModal();
     } catch (err) {
       alert(err.message || "Error al guardar producto");
@@ -236,7 +244,6 @@ export default function Products() {
 
   const toggleEstado = async (id) => {
     try {
-      const product = products.find((p) => p.id === id);
       await productosService.toggleEstado(id);
       setProducts((prev) =>
         prev.map((p) =>
@@ -327,7 +334,7 @@ export default function Products() {
                 <td colSpan={7} className="p-4 text-center text-red-400">
                   {error}
                   <button
-                    onClick={loadProducts}
+                    onClick={loadData}
                     className="ml-2 text-green-400 hover:underline"
                   >
                     Reintentar
@@ -529,9 +536,9 @@ export default function Products() {
                     disabled={isViewMode}
                   >
                     <option value="">Seleccionar categoría...</option>
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.nombre}>
+                        {cat.nombre}
                       </option>
                     ))}
                   </select>
