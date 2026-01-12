@@ -535,10 +535,12 @@ export default function Products() {
                     onChange={handleChange}
                     disabled={isViewMode}
                   >
-                    <option value="">Seleccionar categoría...</option>
+                    <option value="" disabled>
+                      Seleccionar categoría...
+                    </option>
                     {categories.map((cat) => (
-                      <option key={cat.id} value={cat.nombre}>
-                        {cat.nombre}
+                      <option key={cat.id} value={cat.nombre_categoria}>
+                        {cat.nombre_categoria}
                       </option>
                     ))}
                   </select>

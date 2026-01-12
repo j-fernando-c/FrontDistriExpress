@@ -1,45 +1,42 @@
 // src/pages/Categories.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FiSearch, FiPlus, FiEye, FiEdit2, FiTrash2 } from "react-icons/fi";
+import { categoria_productosService } from "../services/categoria_productosService";
 
 export default function Categories() {
-  const [categories, setCategories] = useState([
-    {
-      id: 1,
-      name: "Granos y Cereales",
-      description: "Arroz, quinua, avena, etc.",
-      products: 45,
-      estado: "Activo",
-    },
-    {
-      id: 2,
-      name: "Aceites y Vinagres",
-      description: "Aceites vegetales, vinagres, etc.",
-      products: 12,
-      estado: "Activo",
-    },
-    {
-      id: 3,
-      name: "Condimentos",
-      description: "Sal, pimienta, especias, etc.",
-      products: 28,
-      estado: "Activo",
-    },
-    {
-      id: 4,
-      name: "Harinas",
-      description: "Harina de trigo, almendras, etc.",
-      products: 15,
-      estado: "Inactivo",
-    },
-    {
-      id: 5,
-      name: "Legumbres",
-      description: "Lentejas, garbanzos, fríjoles, etc.",
-      products: 22,
-      estado: "Activo",
-    },
-  ]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [categoriesResponse] = await Promise.all([
+        categoria_productosService.getAll(),
+      ]);
+
+      const categoriesData = (categoriesResponse.data || []).map((c) => ({
+        id: c.id,
+        name: c.nombre_categoria,
+        description: c.descripcion,
+        products: c.cantidad_productos || 0,
+        estado: c.estado === "ACTIVO" ? "Activo" : "Inactivo",
+      }));
+
+      setCategories(categoriesData);
+    } catch (err) {
+      setError(err.message || "Error al cargar datos");
+      console.error("Error cargando datos:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -163,9 +160,7 @@ export default function Categories() {
     if (editingId) {
       // actualiza solo nombre y descripción; mantiene productos y estado
       setCategories((prev) =>
-        prev.map((c) =>
-          c.id === editingId ? { ...c, ...data } : c
-        )
+        prev.map((c) => (c.id === editingId ? { ...c, ...data } : c))
       );
     } else {
       const newId = categories.length
@@ -267,14 +262,10 @@ export default function Categories() {
               >
                 {/* SIN ICONO, SOLO EL NOMBRE */}
                 <td className="p-3">
-                  <span className="font-medium text-white">
-                    {cat.name}
-                  </span>
+                  <span className="font-medium text-white">{cat.name}</span>
                 </td>
 
-                <td className="p-3 text-neutral-300">
-                  {cat.description}
-                </td>
+                <td className="p-3 text-neutral-300">{cat.description}</td>
 
                 <td className="p-3 text-neutral-300">
                   {cat.products} productos
@@ -323,10 +314,7 @@ export default function Categories() {
 
             {paginatedCategories.length === 0 && (
               <tr>
-                <td
-                  colSpan={5}
-                  className="p-4 text-center text-neutral-400"
-                >
+                <td colSpan={5} className="p-4 text-center text-neutral-400">
                   No se encontraron categorías.
                 </td>
               </tr>
@@ -356,21 +344,19 @@ export default function Categories() {
               Anterior
             </button>
 
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-              (page) => (
-                <button
-                  key={page}
-                  onClick={() => goToPage(page)}
-                  className={`px-3 py-1 rounded-lg border border-neutral-700 ${
-                    page === currentPage
-                      ? "bg-green-600 text-black"
-                      : "bg-neutral-800 hover:bg-neutral-700"
-                  }`}
-                >
-                  {page}
-                </button>
-              )
-            )}
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => goToPage(page)}
+                className={`px-3 py-1 rounded-lg border border-neutral-700 ${
+                  page === currentPage
+                    ? "bg-green-600 text-black"
+                    : "bg-neutral-800 hover:bg-neutral-700"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
 
             <button
               onClick={() => goToPage(currentPage + 1)}
@@ -407,8 +393,7 @@ export default function Categories() {
               {/* Nombre */}
               <div>
                 <label className="block text-sm font-medium text-neutral-300">
-                  Nombre de la Categoría{" "}
-                  <span className="text-red-500">*</span>
+                  Nombre de la Categoría <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -422,17 +407,14 @@ export default function Categories() {
                   disabled={isViewMode}
                 />
                 {errors.name && (
-                  <p className="text-xs text-red-400 mt-1">
-                    {errors.name}
-                  </p>
+                  <p className="text-xs text-red-400 mt-1">{errors.name}</p>
                 )}
               </div>
 
               {/* Descripción */}
               <div>
                 <label className="block text-sm font-medium text-neutral-300">
-                  Descripción{" "}
-                  <span className="text-red-500">*</span>
+                  Descripción <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   name="description"
