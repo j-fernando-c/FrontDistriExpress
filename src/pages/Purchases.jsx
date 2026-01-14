@@ -1,9 +1,18 @@
 // src/pages/Purchases.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FiSearch, FiPlus, FiEye, FiEdit2, FiTrash2 } from "react-icons/fi";
+import { compraService } from "../services/compraService";
+import { proveedorService } from "../services/proveedorService";
+import { productosService } from "../services/productosService";
 
 export default function Purchases() {
-  // ====== Data quemada ======
+  const [purchases, setPurchases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [providersList, setProvidersList] = useState([]);
+  const [productsList, setProductsList] = useState([]);
+
+  // ====== Data para autocomplete ======
   const PRODUCTS = useMemo(
     () => [
       { id: 1, name: "Arroz Integral", price: 4800 },
@@ -41,35 +50,70 @@ export default function Purchases() {
     []
   );
 
-  const [purchases, setPurchases] = useState([
-    {
-      id: 1,
-      providerId: 1,
-      providerName: "Distribuidora Nacional de Granos S.A.S.",
-      providerEmail: "compras@granos.com",
-      providerPhone: "3001234567",
-      date: "2024-04-10",
-      estado: "Activo",
-      items: [
-        {
-          productId: 1,
-          productName: "Arroz Integral",
-          qty: 10,
-          unitPrice: 4800,
-          subtotal: 48000,
-        },
-        {
-          productId: 4,
-          productName: "Lentejas",
-          qty: 5,
-          unitPrice: 5400,
-          subtotal: 27000,
-        },
-      ],
-      total: 75000,
-      notes: "Entrega en bodega principal.",
-    },
-  ]);
+  useEffect(() => {
+    loadData();
+    loadProviders();
+    loadProducts();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await compraService.getAll();
+      const purchasesData = (response.data || []).map((c) => ({
+        id: c.id,
+        providerId: c.proveedor_id,
+        providerName: c.proveedor_id ? `Proveedor ${c.proveedor_id}` : "Sin proveedor",
+        providerEmail: "",
+        providerPhone: "",
+        date: c.fecha ? c.fecha.split("T")[0] : "",
+        estado: c.estado || "Activo",
+        items: [],
+        total: c.total_compra || 0,
+        notes: "",
+      }));
+      setPurchases(purchasesData);
+    } catch (err) {
+      setError(err.message || "Error al cargar compras");
+      console.error("Error cargando compras:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadProviders = async () => {
+    try {
+      const response = await proveedorService.getAll();
+      const providersData = (response.data || []).map((p) => ({
+        id: p.id,
+        name: p.nombre,
+        email: p.email || "",
+        phone: p.contacto || p.telefono || "",
+      }));
+      if (providersData.length > 0) {
+        setProvidersList(providersData);
+      }
+    } catch (err) {
+      console.error("Error cargando proveedores:", err);
+    }
+  };
+
+  const loadProducts = async () => {
+    try {
+      const response = await productosService.getAll();
+      const productsData = (response.data || []).map((p) => ({
+        id: p.id,
+        name: p.nombre,
+        price: p.precio || 0,
+      }));
+      if (productsData.length > 0) {
+        setProductsList(productsData);
+      }
+    } catch (err) {
+      console.error("Error cargando productos:", err);
+    }
+  };
 
   // ====== UI state ======
   const [search, setSearch] = useState("");
@@ -333,67 +377,76 @@ export default function Purchases() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (isViewMode) return;
     if (!validate()) return;
 
-    const provider = PROVIDERS.find((p) => String(p.id) === String(formData.providerId));
-
     const normalizedItems = formData.items.map((it) => {
       const prod =
-        PRODUCTS.find((p) => p.id === it.productId) ||
-        PRODUCTS.find((p) => p.name === it.productName);
+        [...PRODUCTS, ...productsList].find((p) => p.id === it.productId) ||
+        [...PRODUCTS, ...productsList].find((p) => p.name === it.productName);
 
       const productId = prod?.id ?? it.productId ?? null;
-      const productName = prod?.name ?? it.productName.trim();
+      // const productName = prod?.name ?? it.productName.trim();
       const qty = Number(it.qty);
       const unitPrice = Number(it.unitPrice);
 
       return {
-        productId,
-        productName,
-        qty: Number.isFinite(qty) ? qty : 0,
-        unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
+        producto_id: productId,
+        cantidad: Number.isFinite(qty) ? qty : 0,
+        precio_unitario: Number.isFinite(unitPrice) ? unitPrice : 0,
         subtotal: calcSubtotal(qty, unitPrice),
       };
     });
 
     const total = normalizedItems.reduce((acc, it) => acc + (it.subtotal || 0), 0);
 
-    const payload = {
-      providerId: provider?.id ?? Number(formData.providerId),
-      providerName: provider?.name ?? "Proveedor",
-      providerEmail: provider?.email ?? "",
-      providerPhone: provider?.phone ?? "",
-      date: formData.date,
-      notes: formData.notes?.trim() || "",
+    const data = {
+      proveedor_id: Number(formData.providerId),
+      fecha: formData.date,
+      total_compra: total,
+      observaciones: formData.notes?.trim() || "",
       estado: "Activo",
       items: normalizedItems,
-      total,
     };
 
-    if (editingId) {
-      setPurchases((prev) => prev.map((p) => (p.id === editingId ? { ...p, ...payload } : p)));
-    } else {
-      const newId = purchases.length ? Math.max(...purchases.map((p) => p.id)) + 1 : 1;
-      setPurchases((prev) => [...prev, { id: newId, ...payload }]);
+    try {
+      if (editingId) {
+        await compraService.update(editingId, data);
+      } else {
+        await compraService.create(data);
+      }
+      await loadData();
+      closeModal();
+    } catch (err) {
+      alert(err.message || "Error al guardar compra");
     }
-
-    closeModal();
   };
 
-  const deletePurchase = (id) => {
+  const deletePurchase = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar esta compra?")) return;
-    setPurchases((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await compraService.delete(id);
+      setPurchases((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar compra");
+    }
   };
 
-  const toggleEstado = (id) => {
-    setPurchases((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, estado: p.estado === "Activo" ? "Inactivo" : "Activo" } : p
-      )
-    );
+  const toggleEstado = async (id) => {
+    try {
+      await compraService.toggleEstado(id);
+      setPurchases((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...p, estado: p.estado === "ACTIVO" ? "Inactivo" : "Activo" }
+            : p
+        )
+      );
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
+    }
   };
 
   // ✅ cantidad total de productos comprados (sumatoria qty)
@@ -448,76 +501,97 @@ export default function Purchases() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginated.map((p) => (
-              <tr
-                key={p.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3 font-medium text-white">{p.providerName}</td>
-
-                <td className="p-3 text-neutral-300">
-                  <div className="leading-5">
-                    <div className="text-neutral-200">{p.providerEmail || "—"}</div>
-                    <div className="text-neutral-400">{p.providerPhone || "—"}</div>
-                  </div>
-                </td>
-
-                <td className="p-3 text-neutral-300">
-                  {countProducts(p)}{" "}
-                  <span className="text-neutral-500">und.</span>
-                </td>
-
-                <td className="p-3 text-neutral-300">{p.date}</td>
-
-                <td className="p-3 text-green-400 font-semibold">{money(p.total)}</td>
-
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(p.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
-                      ${
-                        p.estado === "Activo"
-                          ? "bg-green-600 text-black hover:bg-green-500"
-                          : "bg-red-600 text-black hover:bg-red-500"
-                      }`}
-                  >
-                    {p.estado}
-                  </button>
-                </td>
-
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openView(p)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openEdit(p)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deletePurchase(p.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando compras...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginated.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={7} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadData}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginated.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-4 text-center text-neutral-400">
                   No se encontraron compras.
                 </td>
               </tr>
+            ) : (
+              paginated.map((p) => (
+                <tr
+                  key={p.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3 font-medium text-white">{p.providerName}</td>
+
+                  <td className="p-3 text-neutral-300">
+                    <div className="leading-5">
+                      <div className="text-neutral-200">{p.providerEmail || "—"}</div>
+                      <div className="text-neutral-400">{p.providerPhone || "—"}</div>
+                    </div>
+                  </td>
+
+                  <td className="p-3 text-neutral-300">
+                    {countProducts(p)}{" "}
+                    <span className="text-neutral-500">und.</span>
+                  </td>
+
+                  <td className="p-3 text-neutral-300">{p.date}</td>
+
+                  <td className="p-3 text-green-400 font-semibold">{money(p.total)}</td>
+
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(p.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
+                        ${
+                          p.estado === "ACTIVO" || p.estado === "Activo"
+                            ? "bg-green-600 text-black hover:bg-green-500"
+                            : "bg-red-600 text-black hover:bg-red-500"
+                        }`}
+                    >
+                      {p.estado === "ACTIVO" ? "Activo" : p.estado}
+                    </button>
+                  </td>
+
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openView(p)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openEdit(p)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deletePurchase(p.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -596,7 +670,7 @@ export default function Purchases() {
                     disabled={isViewMode}
                   >
                     <option value="">Seleccionar proveedor...</option>
-                    {PROVIDERS.map((p) => (
+                    {[...PROVIDERS, ...providersList].map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name}
                       </option>

@@ -1,5 +1,5 @@
 // src/pages/Sales.jsx
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FiSearch,
   FiEye,
@@ -11,8 +11,12 @@ import {
 } from "react-icons/fi";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { ventaService } from "../services/ventaService";
+import { clientesService } from "../services/clientesService";
+import { usuariosService } from "../services/usuariosService";
+import { productosService } from "../services/productosService";
 
-// ===== DATOS QUEMADOS PARA AUTOCOMPLETAR =====
+// ===== DATOS PARA AUTOCOMPLETAR =====
 const CLIENTS_LIST = [
   { nombre: "Carlos Gómez", tipoCliente: "Natural", nit: "" },
   { nombre: "Laura Sánchez", tipoCliente: "Jurídico", nit: "900123456-1" },
@@ -23,8 +27,6 @@ const CLIENTS_LIST = [
   { nombre: "Tienda Orgánica Vida", tipoCliente: "Natural", nit: "" },
   { nombre: "Comercializadora Central", tipoCliente: "Jurídico", nit: "830456789-0" },
 ];
-
-const SELLERS_LIST = ["María Torres", "Juan Pérez", "Carlos Mendoza", "María González"];
 
 const PRODUCTS_LIST = [
   "Arroz integral",
@@ -38,73 +40,94 @@ const PRODUCTS_LIST = [
 ];
 
 export default function Sales() {
-  const [sales, setSales] = useState([
-    {
-      id: 1,
-      cliente: "Carlos Gómez",
-      tipoCliente: "Natural",
-      nit: "",
-      fecha: "2025-02-01",
-      vendedor: "María Torres",
-      metodoPago: "Efectivo",
-      productos: [
-        { name: "Arroz integral", qty: 2, price: 12.5, subtotal: 25.0 },
-        { name: "Aceite de Oliva", qty: 1, price: 23.5, subtotal: 23.5 },
-      ],
-      descuento: 0,
-      impuestos: 0,
-      total: 48.5,
-      observaciones: "",
-      estado: "Completada",
-    },
-    {
-      id: 2,
-      cliente: "Laura Sánchez",
-      tipoCliente: "Jurídico",
-      nit: "900123456-1",
-      fecha: "2025-02-03",
-      vendedor: "Juan Pérez",
-      metodoPago: "Tarjeta",
-      productos: [{ name: "Quinua Real", qty: 1, price: 12.8, subtotal: 12.8 }],
-      descuento: 0,
-      impuestos: 0,
-      total: 12.8,
-      observaciones: "",
-      estado: "Pendiente",
-    },
+  const [sales, setSales] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [vendedores, setVendedores] = useState([]);
+  // eslint-disable-next-line no-unused-vars
+  const [clientesList, setClientesList] = useState(CLIENTS_LIST);
+  // eslint-disable-next-line no-unused-vars
+  const [productsList, setProductsList] = useState(PRODUCTS_LIST);
 
-    // saldo negativo (deuda)
-    {
-      id: 3,
-      cliente: "Distribuidora Andina S.A.S.",
-      tipoCliente: "Jurídico",
-      nit: "901234567-8",
-      fecha: "2025-02-05",
-      vendedor: "María Torres",
-      metodoPago: "Crédito",
-      productos: [{ name: "Harina de Almendras", qty: 3, price: 22.5, subtotal: 67.5 }],
-      descuento: 0,
-      impuestos: 0,
-      total: -67.5,
-      observaciones: "Saldo pendiente por abonos.",
-      estado: "Pendiente",
-    },
-    {
-      id: 4,
-      cliente: "Panadería El Trigal",
-      tipoCliente: "Natural",
-      nit: "",
-      fecha: "2025-02-06",
-      vendedor: "Juan Pérez",
-      metodoPago: "Crédito",
-      productos: [{ name: "Aceite de Oliva", qty: 2, price: 23.5, subtotal: 47.0 }],
-      descuento: 0,
-      impuestos: 0,
-      total: -47.0,
-      observaciones: "Saldo pendiente por abonos.",
-      estado: "Pendiente",
-    },
-  ]);
+  useEffect(() => {
+    loadData();
+    loadVendedores();
+    loadClientes();
+    loadProductos();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await ventaService.getAll();
+      const salesData = (response.data || []).map((v) => ({
+        id: v.id,
+        cliente: v.cliente_id ? `Cliente ${v.cliente_id}` : "Sin cliente",
+        tipoCliente: "Natural",
+        nit: "",
+        fecha: v.fecha ? v.fecha.split("T")[0] : new Date().toISOString().slice(0, 10),
+        vendedor: v.domicilio_id ? `Vendedor ${v.domicilio_id}` : "",
+        metodoPago: "Efectivo",
+        productos: [],
+        descuento: 0,
+        impuestos: 0,
+        total: v.total_venta || 0,
+        observaciones: "",
+        estado: v.estado || "Pendiente",
+      }));
+      setSales(salesData);
+    } catch (err) {
+      setError(err.message || "Error al cargar ventas");
+      console.error("Error cargando ventas:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadVendedores = async () => {
+    try {
+      const response = await usuariosService.getAll();
+      const vendedoresData = (response.data || [])
+        .filter((u) => u.rol_id === 2)
+        .map((u) => u.nombre);
+      if (vendedoresData.length > 0) {
+        setVendedores(vendedoresData);
+      } else {
+        setVendedores(["María Torres", "Juan Pérez", "Carlos Mendoza", "María González"]);
+      }
+    } catch {
+      setVendedores(["María Torres", "Juan Pérez", "Carlos Mendoza", "María González"]);
+    }
+  };
+
+  const loadClientes = async () => {
+    try {
+      const response = await clientesService.getAll();
+      const clientesData = (response.data || []).map((c) => ({
+        nombre: `${c.nombres} ${c.apellidos}`,
+        tipoCliente: c.tipoCliente || "Natural",
+        nit: c.nit || "",
+      }));
+      if (clientesData.length > 0) {
+        setClientesList(clientesData);
+      }
+    } catch (err) {
+      console.error("Error cargando clientes:", err);
+    }
+  };
+
+  const loadProductos = async () => {
+    try {
+      const response = await productosService.getAll();
+      const productosData = (response.data || []).map((p) => p.nombre);
+      if (productosData.length > 0) {
+        setProductsList(productosData);
+      }
+    } catch (err) {
+      console.error("Error cargando productos:", err);
+    }
+  };
 
   // ===== TABLA DE ABONOS =====
   const [abonos, setAbonos] = useState([]);
@@ -325,7 +348,7 @@ export default function Sales() {
     return true;
   };
 
-  const saveSale = () => {
+  const saveSale = async () => {
     if (!validateForm()) return;
 
     const productosLimpios = formData.productos
@@ -350,67 +373,57 @@ export default function Sales() {
     const impuestos = Number(formData.impuestos) || 0;
     const total = Math.max(0, subtotal - descuento + impuestos);
 
-    if (editingId) {
-      setSales((prev) =>
-        prev.map((s) =>
-          s.id === editingId
-            ? {
-                ...s,
-                cliente: formData.cliente,
-                tipoCliente: formData.tipoCliente,
-                nit: formData.nit || "",
-                fecha: formData.fecha,
-                vendedor: formData.vendedor,
-                metodoPago: formData.metodoPago,
-                productos: productosLimpios,
-                descuento,
-                impuestos,
-                total,
-                observaciones: formData.observaciones,
-              }
-            : s
-        )
-      );
-    } else {
-      const newId = sales.length ? Math.max(...sales.map((s) => s.id)) + 1 : 1;
-      const nuevaVenta = {
-        id: newId,
-        cliente: formData.cliente,
-        tipoCliente: formData.tipoCliente,
-        nit: formData.nit || "",
-        fecha: formData.fecha,
-        vendedor: formData.vendedor,
-        metodoPago: formData.metodoPago,
-        productos: productosLimpios,
-        descuento,
-        impuestos,
-        total,
-        observaciones: formData.observaciones,
-        estado: "Pendiente",
-      };
-      setSales((prev) => [...prev, nuevaVenta]);
-    }
+    const data = {
+      cliente_id: formData.clienteId || null,
+      fecha: formData.fecha,
+      total_venta: total,
+      metodo_pago: formData.metodoPago,
+      descuento,
+      impuestos,
+      observaciones: formData.observaciones,
+      productos: productosLimpios,
+    };
 
-    closeForm();
+    try {
+      if (editingId) {
+        await ventaService.update(editingId, data);
+      } else {
+        await ventaService.create(data);
+      }
+      await loadData();
+      closeForm();
+    } catch (err) {
+      alert(err.message || "Error al guardar venta");
+    }
   };
 
-  const deleteSale = (id) => {
+  const deleteSale = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar esta venta?")) return;
-    setSales((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await ventaService.delete(id);
+      setSales((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar venta");
+    }
   };
 
   // ===== 4 ESTADOS EN TABLA (rotación al click) =====
   const ESTADOS = ["Pendiente", "En transito", "Completada", "Anulada"];
 
-  const toggleEstado = (id) => {
-    setSales((prev) =>
-      prev.map((s) => {
-        if (s.id !== id) return s;
-        const idx = ESTADOS.indexOf(s.estado);
-        const next = ESTADOS[(idx + 1) % ESTADOS.length] || "Pendiente";
-        return { ...s, estado: next };
-      })
-    );
+  const toggleEstado = async (id) => {
+    try {
+      await ventaService.toggleEstado(id);
+      setSales((prev) =>
+        prev.map((s) => {
+          if (s.id !== id) return s;
+          const idx = ESTADOS.indexOf(s.estado);
+          const next = ESTADOS[(idx + 1) % ESTADOS.length] || "Pendiente";
+          return { ...s, estado: next };
+        })
+      );
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
+    }
   };
 
   // estilos del botón estado (manteniendo tu patrón actual)
@@ -627,82 +640,103 @@ export default function Sales() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedSales.map((sale) => (
-              <tr
-                key={sale.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3">{sale.cliente}</td>
-                <td className="p-3">{sale.fecha}</td>
-                <td className="p-3">{sale.vendedor}</td>
-                <td className="p-3">
-                  {sale.productos.map((p, i) => (
-                    <div key={i}>
-                      {p.name} x{p.qty}
-                    </div>
-                  ))}
-                </td>
-                <td className="p-3 font-semibold text-green-400">
-                  ${sale.total.toFixed(2)}
-                </td>
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(sale.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoButtonClasses(
-                      sale.estado
-                    )}`}
-                  >
-                    {sale.estado}
-                  </button>
-                </td>
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openView(sale)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => generatePdf(sale)}
-                    >
-                      <FiFileText className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openForm(sale)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteSale(sale.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openAbonar(sale)}
-                      title="Realizar abono"
-                    >
-                      <FiDollarSign className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando ventas...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedSales.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={7} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadData}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedSales.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-4 text-center text-neutral-400">
                   No se encontraron ventas.
                 </td>
               </tr>
+            ) : (
+              paginatedSales.map((sale) => (
+                <tr
+                  key={sale.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3">{sale.cliente}</td>
+                  <td className="p-3">{sale.fecha}</td>
+                  <td className="p-3">{sale.vendedor}</td>
+                  <td className="p-3">
+                    {sale.productos && sale.productos.map((p, i) => (
+                      <div key={i}>
+                        {p.name} x{p.qty}
+                      </div>
+                    ))}
+                  </td>
+                  <td className="p-3 font-semibold text-green-400">
+                    ${sale.total.toFixed(2)}
+                  </td>
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(sale.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoButtonClasses(
+                        sale.estado
+                      )}`}
+                    >
+                      {sale.estado}
+                    </button>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openView(sale)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => generatePdf(sale)}
+                      >
+                        <FiFileText className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openForm(sale)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteSale(sale.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openAbonar(sale)}
+                        title="Realizar abono"
+                      >
+                        <FiDollarSign className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -907,27 +941,27 @@ export default function Sales() {
                   </div>
                 )}
 
-                {/* VENDEDOR (SELECT) */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-medium text-neutral-300">
-                    Vendedor <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    className={`w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none ${
-                      !isReadOnly && "focus:border-green-500"
-                    } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
-                    value={formData.vendedor}
-                    disabled={isReadOnly}
-                    onChange={(e) => setFormData({ ...formData, vendedor: e.target.value })}
-                  >
-                    <option value="">Seleccionar vendedor</option>
-                    {SELLERS_LIST.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  {/* VENDEDOR (SELECT) */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm font-medium text-neutral-300">
+                      Vendedor <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      className={`w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none ${
+                        !isReadOnly && "focus:border-green-500"
+                      } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
+                      value={formData.vendedor}
+                      disabled={isReadOnly}
+                      onChange={(e) => setFormData({ ...formData, vendedor: e.target.value })}
+                    >
+                      <option value="">Seleccionar vendedor</option>
+                      {vendedores.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                 {/* METODO PAGO */}
                 <div className="flex flex-col gap-1">

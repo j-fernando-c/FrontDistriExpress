@@ -1,5 +1,5 @@
 // src/pages/Rutas.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FiSearch,
   FiEye,
@@ -10,60 +10,47 @@ import {
   FiArrowDown,
   FiMapPin,
 } from "react-icons/fi";
+import { rutasService } from "../services/rutasService";
 
 const emptyStop = () => ({ nombre: "", direccion: "" });
 
 export default function Rutas() {
-  const [routes, setRoutes] = useState([
-    {
-      id: 1,
-      nombre: "Ruta Norte Mañana",
-      zona: "Zona Norte",
-      tiempoMin: 180,
-      distanciaKm: 12.5,
-      descripcion: "Ruta matutina por barrios residenciales del norte.",
-      domiciliario: "Luis Rodríguez",
-      vehiculo: "Motocicleta Honda CB 125",
-      horaInicio: "08:00",
-      horaFin: "12:00",
-      observaciones: "Priorizar entregas de productos frescos.",
-      estado: "Activa",
-      paradas: [
-        {
-          nombre: "Supermercado Norte Plaza",
-          direccion: "Calle 12 #15-30, Zona Norte",
-        },
-        {
-          nombre: "Tienda Las Colinas",
-          direccion: "Carrera 8 #20-15, Zona Norte",
-        },
-      ],
-    },
-    {
-      id: 2,
-      nombre: "Ruta Sur Express",
-      zona: "Zona Sur",
-      tiempoMin: 240,
-      distanciaKm: 18.3,
-      descripcion: "Cobertura rápida en zona sur.",
-      domiciliario: "Carlos Méndez",
-      vehiculo: "Motocicleta Yamaha FZ 150",
-      horaInicio: "14:00",
-      horaFin: "18:00",
-      observaciones: "",
-      estado: "Inactiva",
-      paradas: [
-        {
-          nombre: "Tienda El Progreso",
-          direccion: "Calle 30 #5-22, Zona Sur",
-        },
-        {
-          nombre: "MiniMarket Sur",
-          direccion: "Carrera 20 #45-10, Zona Sur",
-        },
-      ],
-    },
-  ]);
+  const [routes, setRoutes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadRoutes();
+  }, []);
+
+  const loadRoutes = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await rutasService.getAll();
+      const routesData = (response.data || []).map((r) => ({
+        id: r.id,
+        nombre: r.nombre_ruta || "Sin nombre",
+        destino: r.destino,
+        tiempoMin: 0,
+        distanciaKm: 0,
+        descripcion: r.descripcion || "",
+        origen: r.origen,
+        vehiculo: "",
+        horaInicio: "",
+        horaFin: "",
+        observaciones: "",
+        estado: r.estado === "ACTIVO" ? "Activa" : "Inactiva",
+        paradas: [],
+      }));
+      setRoutes(routesData);
+    } catch (err) {
+      setError(err.message || "Error al cargar rutas");
+      console.error("Error cargando rutas:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
 
@@ -217,7 +204,7 @@ export default function Rutas() {
     return true;
   };
 
-  const saveRoute = () => {
+  const saveRoute = async () => {
     if (isReadOnly) return;
     if (!validateForm()) return;
 
@@ -230,70 +217,60 @@ export default function Rutas() {
         direccion: p.direccion.trim(),
       }));
 
-    if (editingId) {
+    const data = {
+      nombre: formData.nombreRuta.trim(),
+      zona: formData.zona.trim(),
+      descripcion: formData.descripcion.trim(),
+      tiempo_minutos: tiempoMin,
+      distancia_km: distanciaKm,
+      domiciliario: formData.domiciliario.trim(),
+      vehiculo: formData.vehiculo.trim(),
+      hora_inicio: formData.horaInicio,
+      hora_fin: formData.horaFin,
+      observaciones: formData.observaciones.trim(),
+      estado: "ACTIVO",
+      paradas: paradasValidas,
+    };
+
+    try {
+      if (editingId) {
+        await rutasService.update(editingId, data);
+      } else {
+        await rutasService.create(data);
+      }
+      await loadRoutes();
+      closeForm();
+    } catch (err) {
+      alert(err.message || "Error al guardar ruta");
+    }
+  };
+
+  const deleteRoute = async (id) => {
+    if (!confirm("¿Seguro que deseas eliminar esta ruta?")) return;
+    try {
+      await rutasService.delete(id);
+      setRoutes((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar ruta");
+    }
+  };
+
+  const toggleEstado = async (id) => {
+    try {
+      await rutasService.toggleEstado(id);
       setRoutes((prev) =>
         prev.map((r) =>
-          r.id === editingId
+          r.id === id
             ? {
                 ...r,
-                nombre: formData.nombreRuta,
-                zona: formData.zona,
-                tiempoMin,
-                distanciaKm,
-                descripcion: formData.descripcion,
-                domiciliario: formData.domiciliario,
-                vehiculo: formData.vehiculo,
-                horaInicio: formData.horaInicio,
-                horaFin: formData.horaFin,
-                observaciones: formData.observaciones,
-                paradas: paradasValidas,
+                estado: r.estado === "Activa" ? "Inactiva" : "Activa",
               }
             : r
         )
       );
-    } else {
-      const newId = routes.length
-        ? Math.max(...routes.map((r) => r.id)) + 1
-        : 1;
-
-      const nuevaRuta = {
-        id: newId,
-        nombre: formData.nombreRuta,
-        zona: formData.zona,
-        tiempoMin,
-        distanciaKm,
-        descripcion: formData.descripcion,
-        domiciliario: formData.domiciliario,
-        vehiculo: formData.vehiculo,
-        horaInicio: formData.horaInicio,
-        horaFin: formData.horaFin,
-        observaciones: formData.observaciones,
-        estado: "Activa",
-        paradas: paradasValidas,
-      };
-
-      setRoutes((prev) => [...prev, nuevaRuta]);
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
     }
-
-    closeForm();
-  };
-
-  const deleteRoute = (id) => {
-    if (!confirm("¿Seguro que deseas eliminar esta ruta?")) return;
-    setRoutes((prev) => prev.filter((r) => r.id !== id));
-  };
-
-  const toggleEstado = (id) => {
-    setRoutes((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              estado: r.estado === "Activa" ? "Inactiva" : "Activa",
-            }
-          : r
-      )
-    );
   };
 
   const estadoClasses = (estado) =>
@@ -380,8 +357,8 @@ export default function Rutas() {
           <thead className="bg-neutral-800/80 text-neutral-300 text-sm uppercase">
             <tr>
               <th className="p-3 font-semibold">Ruta</th>
-              <th className="p-3 font-semibold">Zona</th>
-              <th className="p-3 font-semibold">Domiciliario</th>
+              <th className="p-3 font-semibold">origen</th>
+              <th className="p-3 font-semibold">Destino</th>
               <th className="p-3 font-semibold">Tiendas</th>
               <th className="p-3 font-semibold">Estado</th>
               <th className="p-3 font-semibold text-center">Acciones</th>
@@ -389,79 +366,99 @@ export default function Rutas() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedRoutes.map((r) => {
-              const tiendasCount = r.paradas ? r.paradas.length : 0;
-              return (
-                <tr
-                  key={r.id}
-                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-                >
-                  <td className="p-3">
-                    <div className="font-semibold">{r.nombre}</div>
-                    <div className="text-xs text-neutral-400">
-                      {r.tiempoMin} min · {r.distanciaKm.toFixed(1)} km
-                    </div>
-                  </td>
-                  <td className="p-3">{r.zona}</td>
-                  <td className="p-3">
-                    <div>{r.domiciliario || "—"}</div>
-                    {r.vehiculo && (
-                      <div className="text-xs text-neutral-400">
-                        {r.vehiculo}
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-3">
-                    {tiendasCount}{" "}
-                    {tiendasCount === 1 ? "tienda" : "tiendas"}
-                  </td>
-                  <td className="p-3">
-                    <button
-                      onClick={() => toggleEstado(r.id)}
-                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
-                        r.estado
-                      )}`}
-                    >
-                      {r.estado}
-                    </button>
-                  </td>
-                  <td className="p-3">
-                    <div className="flex justify-center gap-3">
-                      {/* VER (solo lectura) */}
-                      <button
-                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                        onClick={() => openView(r)}
-                      >
-                        <FiEye className="text-lg" />
-                      </button>
-
-                      {/* EDITAR */}
-                      <button
-                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                        onClick={() => openForm(r)}
-                      >
-                        <FiEdit2 className="text-lg" />
-                      </button>
-
-                      {/* ELIMINAR */}
-                      <button
-                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                        onClick={() => deleteRoute(r.id)}
-                      >
-                        <FiTrash2 className="text-lg" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-
-            {paginatedRoutes.length === 0 && (
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando rutas...
+                  </div>
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td colSpan={6} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadRoutes}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedRoutes.length === 0 ? (
               <tr>
                 <td colSpan={6} className="p-4 text-center text-neutral-400">
                   No se encontraron rutas.
                 </td>
               </tr>
+            ) : (
+              paginatedRoutes.map((r) => {
+                const tiendasCount = r.paradas ? r.paradas.length : 0;
+                return (
+                  <tr
+                    key={r.id}
+                    className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                  >
+                    <td className="p-3">
+                      <div className="font-semibold">{r.nombre}</div>
+                      <div className="text-xs text-neutral-400">
+                        {r.tiempoMin} min · {r.distanciaKm.toFixed(1)} km
+                      </div>
+                    </td>
+                    <td className="p-3">{r.origen}</td>
+                    <td className="p-3">
+                      <div>{r.destino || "—"}</div>
+                      {r.vehiculo && (
+                        <div className="text-xs text-neutral-400">
+                          {r.vehiculo}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      {tiendasCount} {tiendasCount === 1 ? "tienda" : "tiendas"}
+                    </td>
+                    <td className="p-3">
+                      <button
+                        onClick={() => toggleEstado(r.id)}
+                        className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
+                          r.estado
+                        )}`}
+                      >
+                        {r.estado}
+                      </button>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex justify-center gap-3">
+                        {/* VER (solo lectura) */}
+                        <button
+                          className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                          onClick={() => openView(r)}
+                        >
+                          <FiEye className="text-lg" />
+                        </button>
+
+                        {/* EDITAR */}
+                        <button
+                          className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                          onClick={() => openForm(r)}
+                        >
+                          <FiEdit2 className="text-lg" />
+                        </button>
+
+                        {/* ELIMINAR */}
+                        <button
+                          className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                          onClick={() => deleteRoute(r.id)}
+                        >
+                          <FiTrash2 className="text-lg" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -488,21 +485,19 @@ export default function Rutas() {
               Anterior
             </button>
 
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-              (page) => (
-                <button
-                  key={page}
-                  onClick={() => goToPage(page)}
-                  className={`px-3 py-1 rounded-lg border border-neutral-700 ${
-                    page === currentPage
-                      ? "bg-green-600 text-black"
-                      : "bg-neutral-800 hover:bg-neutral-700"
-                  }`}
-                >
-                  {page}
-                </button>
-              )
-            )}
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => goToPage(page)}
+                className={`px-3 py-1 rounded-lg border border-neutral-700 ${
+                  page === currentPage
+                    ? "bg-green-600 text-black"
+                    : "bg-neutral-800 hover:bg-neutral-700"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
 
             <button
               onClick={() => goToPage(currentPage + 1)}
@@ -548,8 +543,7 @@ export default function Rutas() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-neutral-300">
-                      Nombre de la Ruta{" "}
-                      <span className="text-red-500">*</span>
+                      Nombre de la Ruta <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -572,8 +566,7 @@ export default function Rutas() {
 
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-neutral-300">
-                      Zona Asignada{" "}
-                      <span className="text-red-500">*</span>
+                      Zona Asignada <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -832,11 +825,7 @@ export default function Rutas() {
                               value={p.nombre}
                               disabled={isReadOnly}
                               onChange={(e) =>
-                                updateParada(
-                                  index,
-                                  "nombre",
-                                  e.target.value
-                                )
+                                updateParada(index, "nombre", e.target.value)
                               }
                             />
                           </div>
@@ -855,11 +844,7 @@ export default function Rutas() {
                               value={p.direccion}
                               disabled={isReadOnly}
                               onChange={(e) =>
-                                updateParada(
-                                  index,
-                                  "direccion",
-                                  e.target.value
-                                )
+                                updateParada(index, "direccion", e.target.value)
                               }
                             />
                           </div>

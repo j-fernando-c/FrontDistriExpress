@@ -146,57 +146,56 @@ export default function Categories() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (isViewMode) return;
 
     if (!validate()) return;
 
     const data = {
-      name: formData.name.trim(),
-      description: formData.description.trim(),
+      nombre_categoria: formData.name.trim(),
+      descripcion: formData.description.trim(),
     };
 
-    if (editingId) {
-      // actualiza solo nombre y descripción; mantiene productos y estado
-      setCategories((prev) =>
-        prev.map((c) => (c.id === editingId ? { ...c, ...data } : c))
-      );
-    } else {
-      const newId = categories.length
-        ? Math.max(...categories.map((c) => c.id)) + 1
-        : 1;
-
-      setCategories((prev) => [
-        ...prev,
-        {
-          id: newId,
-          ...data,
-          products: 0,
-          estado: "Activo", // nuevas categorías siempre activas
-        },
-      ]);
+    try {
+      if (editingId) {
+        await categoria_productosService.update(editingId, data);
+      } else {
+        await categoria_productosService.create(data);
+      }
+      await loadData();
+      closeModal();
+    } catch (err) {
+      alert(err.message || "Error al guardar categoría");
     }
-
-    closeModal();
   };
 
-  const deleteCategory = (id) => {
+  const deleteCategory = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar esta categoría?")) return;
-    setCategories((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await categoria_productosService.delete(id);
+      setCategories((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar categoría");
+    }
   };
 
-  const toggleEstado = (id) => {
-    setCategories((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              estado: c.estado === "Activo" ? "Inactivo" : "Activo",
-            }
-          : c
-      )
-    );
+  const toggleEstado = async (id) => {
+    try {
+      await categoria_productosService.toggleEstado(id);
+      setCategories((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                estado: c.estado === "Activo" ? "Inactivo" : "Activo",
+              }
+            : c
+        )
+      );
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
+    }
   };
 
   const inputBase =
@@ -255,69 +254,90 @@ export default function Categories() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedCategories.map((cat) => (
-              <tr
-                key={cat.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                {/* SIN ICONO, SOLO EL NOMBRE */}
-                <td className="p-3">
-                  <span className="font-medium text-white">{cat.name}</span>
-                </td>
-
-                <td className="p-3 text-neutral-300">{cat.description}</td>
-
-                <td className="p-3 text-neutral-300">
-                  {cat.products} productos
-                </td>
-
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(cat.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
-                      ${
-                        cat.estado === "Activo"
-                          ? "bg-green-600 text-black hover:bg-green-500"
-                          : "bg-red-600 text-black hover:bg-red-500"
-                      }`}
-                  >
-                    {cat.estado}
-                  </button>
-                </td>
-
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openView(cat)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openEdit(cat)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteCategory(cat.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando categorías...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedCategories.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={5} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadData}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedCategories.length === 0 ? (
               <tr>
                 <td colSpan={5} className="p-4 text-center text-neutral-400">
                   No se encontraron categorías.
                 </td>
               </tr>
+            ) : (
+              paginatedCategories.map((cat) => (
+                <tr
+                  key={cat.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  {/* SIN ICONO, SOLO EL NOMBRE */}
+                  <td className="p-3">
+                    <span className="font-medium text-white">{cat.name}</span>
+                  </td>
+
+                  <td className="p-3 text-neutral-300">{cat.description}</td>
+
+                  <td className="p-3 text-neutral-300">
+                    {cat.products} productos
+                  </td>
+
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(cat.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
+                        ${
+                          cat.estado === "Activo"
+                            ? "bg-green-600 text-black hover:bg-green-500"
+                            : "bg-red-600 text-black hover:bg-red-500"
+                        }`}
+                    >
+                      {cat.estado}
+                    </button>
+                  </td>
+
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openView(cat)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openEdit(cat)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteCategory(cat.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

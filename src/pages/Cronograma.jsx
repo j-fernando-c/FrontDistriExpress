@@ -1,5 +1,5 @@
 // src/pages/Cronograma.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FiSearch,
   FiEye,
@@ -7,39 +7,13 @@ import {
   FiTrash2,
   FiPlus,
 } from "react-icons/fi";
+import { cronogramasService } from "../services/cronogramasService";
 
 export default function Cronograma() {
   // ====== DATOS INICIALES ======
-  const [cronogramas, setCronogramas] = useState([
-    {
-      id: 1,
-      title: "Reunión Mensual de Ventas",
-      description: "Revisión de metas y resultados del mes.",
-      startDate: "2025-04-15",
-      endDate: "2025-04-15",
-      startTime: "09:00",
-      endTime: "11:00",
-      responsible: "María González",
-      priority: "Alta",
-      category: "Reunión",
-      location: "Sala de Juntas Principal",
-      status: "Pendiente", // Pendiente | Completado | Cancelado
-    },
-    {
-      id: 2,
-      title: "Capacitación Nuevos Productos",
-      description: "Presentación de nuevos productos a vendedores.",
-      startDate: "2025-04-20",
-      endDate: "2025-04-21",
-      startTime: "14:00",
-      endTime: "18:00",
-      responsible: "Carlos López",
-      priority: "Media",
-      category: "Capacitación",
-      location: "Aula de capacitación",
-      status: "Completado",
-    },
-  ]);
+  const [cronogramas, setCronogramas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Búsqueda
   const [search, setSearch] = useState("");
@@ -72,6 +46,38 @@ export default function Cronograma() {
   };
 
   const [formData, setFormData] = useState(emptyForm);
+
+  useEffect(() => {
+    loadCronogramas();
+  }, []);
+
+  const loadCronogramas = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await cronogramasService.getAll();
+      const cronosData = (response.data || []).map((c) => ({
+        id: c.id,
+        title: c.nombre || "Sin título",
+        description: c.descripcion || "",
+        startDate: c.fecha_inicio ? c.fecha_inicio.split("T")[0] : "",
+        endDate: c.fecha_fin ? c.fecha_fin.split("T")[0] : "",
+        startTime: "",
+        endTime: "",
+        responsible: "",
+        priority: "Alta",
+        category: "",
+        location: "",
+        status: "Pendiente",
+      }));
+      setCronogramas(cronosData);
+    } catch (err) {
+      setError(err.message || "Error al cargar cronogramas");
+      console.error("Error cargando cronogramas:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ====== FILTRO + PAGINACIÓN ======
   const filteredCronos = cronogramas.filter((item) => {
@@ -209,34 +215,38 @@ export default function Cronograma() {
     return true;
   };
 
-  const saveCronograma = () => {
+  const saveCronograma = async () => {
     if (!validateForm()) return;
 
-    if (editingId) {
-      setCronogramas((prev) =>
-        prev.map((item) =>
-          item.id === editingId
-            ? { ...item, ...formData }
-            : item
-        )
-      );
-    } else {
-      const newId = cronogramas.length
-        ? Math.max(...cronogramas.map((c) => c.id)) + 1
-        : 1;
+    const data = {
+      nombre: formData.title.trim(),
+      descripcion: formData.description.trim(),
+      fecha_inicio: formData.startDate,
+      fecha_fin: formData.endDate,
+      observaciones: formData.observaciones || "",
+    };
 
-      setCronogramas((prev) => [
-        ...prev,
-        { id: newId, ...formData },
-      ]);
+    try {
+      if (editingId) {
+        await cronogramasService.update(editingId, data);
+      } else {
+        await cronogramasService.create(data);
+      }
+      await loadCronogramas();
+      setIsFormOpen(false);
+    } catch (err) {
+      alert(err.message || "Error al guardar cronograma");
     }
-
-    setIsFormOpen(false);
   };
 
-  const deleteCronograma = (id) => {
+  const deleteCronograma = async (id) => {
     if (!confirm("¿Eliminar este cronograma?")) return;
-    setCronogramas((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await cronogramasService.delete(id);
+      setCronogramas((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar cronograma");
+    }
   };
 
   // ====== RENDER ======
@@ -293,110 +303,128 @@ export default function Cronograma() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedCronos.map((c) => (
-              <tr
-                key={c.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                {/* Título + ubicación */}
-                <td className="p-3">
-                  <div className="font-semibold">{c.title}</div>
-                  {c.location && (
-                    <div className="text-xs text-neutral-400">
-                      {c.location}
-                    </div>
-                  )}
-                </td>
-
-                {/* Fechas */}
-                <td className="p-3 text-xs">
-                  <div>{c.startDate}</div>
-                  <div className="text-neutral-400">
-                    {c.endDate !== c.startDate && `→ ${c.endDate}`}
-                  </div>
-                </td>
-
-                {/* Horario */}
-                <td className="p-3 text-xs">
-                  {c.startTime} - {c.endTime}
-                </td>
-
-                {/* Responsable */}
-                <td className="p-3">{c.responsible}</td>
-
-                {/* Categoría */}
-                <td className="p-3">{c.category}</td>
-
-                {/* PRIORIDAD CLICABLE */}
-                <td className="p-3">
-                  <button
-                    onClick={() => togglePriority(c.id)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold shadow cursor-pointer border
-                      ${
-                        c.priority === "Alta"
-                          ? "bg-red-600 text-white border-red-700"
-                          : c.priority === "Media"
-                          ? "bg-yellow-500 text-black border-yellow-600"
-                          : "bg-green-600 text-black border-green-700"
-                      }`}
-                  >
-                    {c.priority}
-                  </button>
-                </td>
-
-                {/* ESTADO */}
-                <td className="p-3">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-semibold
-                      ${
-                        c.status === "Completado"
-                          ? "bg-green-600 text-black"
-                          : c.status === "Pendiente"
-                          ? "bg-yellow-500 text-black"
-                          : "bg-red-600 text-white"
-                      }`}
-                  >
-                    {c.status}
-                  </span>
-                </td>
-
-                {/* ACCIONES */}
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openView(c)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openForm(c)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteCronograma(c.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={8} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando cronogramas...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedCronos.length === 0 && (
+            ) : error ? (
               <tr>
-                <td
-                  colSpan={8}
-                  className="p-4 text-center text-neutral-400"
-                >
+                <td colSpan={8} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadCronogramas}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedCronos.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="p-4 text-center text-neutral-400">
                   No se encontraron cronogramas.
                 </td>
               </tr>
+            ) : (
+              paginatedCronos.map((c) => (
+                <tr
+                  key={c.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  {/* Título + ubicación */}
+                  <td className="p-3">
+                    <div className="font-semibold">{c.title}</div>
+                    {c.location && (
+                      <div className="text-xs text-neutral-400">
+                        {c.location}
+                      </div>
+                    )}
+                  </td>
+
+                  {/* Fechas */}
+                  <td className="p-3 text-xs">
+                    <div>{c.startDate}</div>
+                    <div className="text-neutral-400">
+                      {c.endDate !== c.startDate && `→ ${c.endDate}`}
+                    </div>
+                  </td>
+
+                  {/* Horario */}
+                  <td className="p-3 text-xs">
+                    {c.startTime} - {c.endTime}
+                  </td>
+
+                  {/* Responsable */}
+                  <td className="p-3">{c.responsible}</td>
+
+                  {/* Categoría */}
+                  <td className="p-3">{c.category}</td>
+
+                  {/* PRIORIDAD CLICABLE */}
+                  <td className="p-3">
+                    <button
+                      onClick={() => togglePriority(c.id)}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold shadow cursor-pointer border
+                        ${
+                          c.priority === "Alta"
+                            ? "bg-red-600 text-white border-red-700"
+                            : c.priority === "Media"
+                            ? "bg-yellow-500 text-black border-yellow-600"
+                            : "bg-green-600 text-black border-green-700"
+                        }`}
+                    >
+                      {c.priority}
+                    </button>
+                  </td>
+
+                  {/* ESTADO */}
+                  <td className="p-3">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold
+                        ${
+                          c.status === "Completado"
+                            ? "bg-green-600 text-black"
+                            : c.status === "Pendiente"
+                            ? "bg-yellow-500 text-black"
+                            : "bg-red-600 text-white"
+                        }`}
+                    >
+                      {c.status}
+                    </span>
+                  </td>
+
+                  {/* ACCIONES */}
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openView(c)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openForm(c)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteCronograma(c.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

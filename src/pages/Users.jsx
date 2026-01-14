@@ -1,5 +1,5 @@
 // src/pages/Users.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FiSearch,
   FiPlus,
@@ -7,34 +7,37 @@ import {
   FiEdit2,
   FiTrash2,
 } from "react-icons/fi";
+import { usuariosService } from "../services/usuariosService";
 
 export default function Users() {
-  const [users, setUsers] = useState([
-    {
-      id: 1,
-      fullName: "Juan Pérez",
-      email: "juan@empresa.com",
-      role: "Admin",
-      estado: "Protegido", // <-- admin comienza protegido
-      password: "123456",
-    },
-    {
-      id: 2,
-      fullName: "María González",
-      email: "maria@empresa.com",
-      role: "Vendedor",
-      estado: "Activo",
-      password: "123456",
-    },
-    {
-      id: 3,
-      fullName: "Carlos López",
-      email: "carlos@empresa.com",
-      role: "Empleado",
-      estado: "Inactivo",
-      password: "123456",
-    },
-  ]);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await usuariosService.getAll();
+      const usersData = (response.data || []).map((u) => ({
+        id: u.id,
+        fullName: u.nombre,
+        email: u.email,
+        role: u.rol_id ? `Rol ${u.rol_id}` : "Sin rol",
+        estado: u.estado === "ACTIVO" ? "Activo" : "Inactivo",
+      }));
+      setUsers(usersData);
+    } catch (err) {
+      setError(err.message || "Error al cargar usuarios");
+      console.error("Error cargando usuarios:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -163,83 +166,57 @@ export default function Users() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isViewMode) return; // por seguridad
+    if (isViewMode) return;
 
     if (!validate()) return;
 
     const data = {
-      fullName: formData.fullName.trim(),
+      nombre: formData.fullName.trim(),
       email: formData.email.trim(),
-      password: formData.password.trim(),
-      role: formData.role,
-      estado: formData.estado,
+      contrasena: formData.password.trim(),
+      rol_id: formData.role === "Admin" ? 1 : formData.role === "Vendedor" ? 2 : 3,
     };
 
-    // Forzar protección si el rol es Admin
-    if (data.role === "Admin") {
-      data.estado = "Protegido";
+    try {
+      if (editingId) {
+        await usuariosService.update(editingId, data);
+      } else {
+        await usuariosService.create(data);
+      }
+      await loadUsers();
+      closeModal();
+    } catch (err) {
+      alert(err.message || "Error al guardar usuario");
     }
-
-    if (editingId) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === editingId
-            ? {
-                ...u,
-                ...data,
-                // si ya era admin, seguir protegido
-                estado:
-                  u.role === "Admin" || data.role === "Admin"
-                    ? "Protegido"
-                    : data.estado,
-              }
-            : u
-        )
-      );
-    } else {
-      const newId = users.length
-        ? Math.max(...users.map((u) => u.id)) + 1
-        : 1;
-      setUsers((prev) => [
-        ...prev,
-        {
-          id: newId,
-          ...data,
-          estado: data.role === "Admin" ? "Protegido" : data.estado,
-        },
-      ]);
-    }
-
-    closeModal();
   };
 
-  const deleteUser = (id) => {
-    const user = users.find((u) => u.id === id);
-    if (user && user.role === "Admin") {
-      alert("El usuario administrador está protegido y no se puede eliminar.");
-      return;
-    }
-
+  const deleteUser = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar este usuario?")) return;
-    setUsers((prev) => prev.filter((u) => u.id !== id));
+    try {
+      await usuariosService.delete(id);
+      setUsers((prev) => prev.filter((u) => u.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar usuario");
+    }
   };
 
-  const toggleEstado = (id) => {
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id !== id) return u;
-        if (u.role === "Admin") {
-          // Admin no cambia de estado
-          return { ...u, estado: "Protegido" };
-        }
-        return {
-          ...u,
-          estado: u.estado === "Activo" ? "Inactivo" : "Activo",
-        };
-      })
-    );
+  const toggleEstado = async (id) => {
+    try {
+      await usuariosService.toggleEstado(id);
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.id !== id) return u;
+          return {
+            ...u,
+            estado: u.estado === "Activo" ? "Inactivo" : "Activo",
+          };
+        })
+      );
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
+    }
   };
 
   const inputBase =
@@ -296,11 +273,35 @@ export default function Users() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedUsers.map((user) => {
-              const isAdmin = user.role === "Admin";
-              const isProtegido = isAdmin || user.estado === "Protegido";
-
-              return (
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando usuarios...
+                  </div>
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td colSpan={5} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadUsers}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedUsers.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="p-4 text-center text-neutral-400">
+                  No se encontraron usuarios.
+                </td>
+              </tr>
+            ) : (
+              paginatedUsers.map((user) => (
                 <tr
                   key={user.id}
                   className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
@@ -309,23 +310,17 @@ export default function Users() {
                   <td className="p-3">{user.email}</td>
                   <td className="p-3">{user.role}</td>
                   <td className="p-3">
-                    {isProtegido ? (
-                      <span className="px-4 py-1.5 rounded-full text-sm font-semibold shadow bg-neutral-500 text-black cursor-not-allowed">
-                        Protegido
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => toggleEstado(user.id)}
-                        className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
+                    <button
+                      onClick={() => toggleEstado(user.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
                       ${
                         user.estado === "Activo"
                           ? "bg-green-600 text-black hover:bg-green-500"
                           : "bg-red-600 text-black hover:bg-red-500"
                       }`}
-                      >
-                        {user.estado}
-                      </button>
-                    )}
+                    >
+                      {user.estado}
+                    </button>
                   </td>
                   <td className="p-3">
                     <div className="flex justify-center gap-3">
@@ -344,33 +339,15 @@ export default function Users() {
                       </button>
 
                       <button
-                        className={`p-2 rounded-lg shadow text-black ${
-                          isAdmin
-                            ? "bg-neutral-700 cursor-not-allowed opacity-60"
-                            : "bg-red-600 hover:bg-red-500"
-                        }`}
-                        onClick={() =>
-                          !isAdmin && deleteUser(user.id)
-                        }
-                        disabled={isAdmin}
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteUser(user.id)}
                       >
                         <FiTrash2 className="text-lg" />
                       </button>
                     </div>
                   </td>
                 </tr>
-              );
-            })}
-
-            {paginatedUsers.length === 0 && (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="p-4 text-center text-neutral-400"
-                >
-                  No se encontraron usuarios.
-                </td>
-              </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -536,8 +513,7 @@ export default function Users() {
                     <option value="">Seleccionar rol...</option>
                     <option value="Admin">Admin</option>
                     <option value="Vendedor">Vendedor</option>
-                    <option value="Repartidor">Repartidor</option>
-                    <option value="Gerente">Gerente</option>
+                    <option value="Empleado">Empleado</option>
                   </select>
                   {errors.role && (
                     <p className="text-xs text-red-400 mt-1">
@@ -558,19 +534,12 @@ export default function Users() {
                     className={`${inputBase} ${
                       isViewMode ? disabledInput : ""
                     }`}
-                    value={formData.role === "Admin" ? "Protegido" : formData.estado}
+                    value={formData.estado}
                     onChange={handleChange}
-                    disabled={isViewMode || formData.role === "Admin"}
+                    disabled={isViewMode}
                   >
-                    {/* Para admin mostramos Protegido fijo */}
-                    {formData.role === "Admin" ? (
-                      <option value="Protegido">Protegido</option>
-                    ) : (
-                      <>
-                        <option value="Activo">Activo</option>
-                        <option value="Inactivo">Inactivo</option>
-                      </>
-                    )}
+                    <option value="Activo">Activo</option>
+                    <option value="Inactivo">Inactivo</option>
                   </select>
                 </div>
               </div>

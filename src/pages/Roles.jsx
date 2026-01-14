@@ -1,5 +1,5 @@
 // src/pages/Roles.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FiSearch,
   FiEye,
@@ -8,6 +8,7 @@ import {
   FiPlus,
   FiLock,
 } from "react-icons/fi";
+import { rolesService } from "../services/rolesService";
 
 const MODULE_PERMISSIONS = [
   { id: "dashboard", label: "Dashboard" },
@@ -29,36 +30,34 @@ const MODULE_PERMISSIONS = [
 ];
 
 export default function Roles() {
-  const [roles, setRoles] = useState([
-    {
-      id: 1,
-      nombre: "Administrador",
-      descripcion: "Acceso completo a todo el sistema.",
-      permisos: MODULE_PERMISSIONS.map((p) => p.id),
-      estado: "Activo",
-    },
-    {
-      id: 2,
-      nombre: "Gerente",
-      descripcion: "Gestión operativa y reportes.",
-      permisos: ["dashboard", "sales", "purchases", "products", "clients"],
-      estado: "Activo",
-    },
-    {
-      id: 3,
-      nombre: "Vendedor",
-      descripcion: "Gestión de ventas y clientes.",
-      permisos: ["sales", "clients", "products"],
-      estado: "Activo",
-    },
-    {
-      id: 4,
-      nombre: "Domiciliario",
-      descripcion: "Gestión de entregas y rutas.",
-      permisos: ["routes", "orders", "clients"],
-      estado: "Inactivo",
-    },
-  ]);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadRoles();
+  }, []);
+
+  const loadRoles = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await rolesService.getAll();
+      const rolesData = (response.data || []).map((r) => ({
+        id: r.id,
+        nombre: r.nombre_rol,
+        descripcion: r.descripcion,
+        permisos: [],
+        estado: r.estado === "ACTIVO" ? "Activo" : "Inactivo",
+      }));
+      setRoles(rolesData);
+    } catch (err) {
+      setError(err.message || "Error al cargar roles");
+      console.error("Error cargando roles:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -176,56 +175,52 @@ export default function Roles() {
     return true;
   };
 
-  const saveRole = () => {
+  const saveRole = async () => {
     if (isViewMode) return;
     if (!validateForm()) return;
 
-    if (editingId) {
+    const data = {
+      nombre_rol: formData.nombre.trim(),
+      descripcion: formData.descripcion.trim(),
+      permisos: formData.permisos,
+    };
+
+    try {
+      if (editingId) {
+        await rolesService.update(editingId, data);
+      } else {
+        await rolesService.create(data);
+      }
+      await loadRoles();
+      setIsFormOpen(false);
+    } catch (err) {
+      alert(err.message || "Error al guardar rol");
+    }
+  };
+
+  const deleteRole = async (id) => {
+    if (!confirm("¿Seguro que deseas eliminar este rol?")) return;
+    try {
+      await rolesService.delete(id);
+      setRoles((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar rol");
+    }
+  };
+
+  const toggleEstado = async (id) => {
+    try {
+      await rolesService.toggleEstado(id);
       setRoles((prev) =>
         prev.map((r) =>
-          r.id === editingId
-            ? {
-                ...r,
-                nombre: formData.nombre.trim(),
-                descripcion: formData.descripcion.trim(),
-                permisos: formData.permisos,
-                estado: formData.estado,
-              }
+          r.id === id
+            ? { ...r, estado: r.estado === "Activo" ? "Inactivo" : "Activo" }
             : r
         )
       );
-    } else {
-      const newId = roles.length
-        ? Math.max(...roles.map((r) => r.id)) + 1
-        : 1;
-
-      const nuevoRol = {
-        id: newId,
-        nombre: formData.nombre.trim(),
-        descripcion: formData.descripcion.trim(),
-        permisos: formData.permisos,
-        estado: formData.estado,
-      };
-
-      setRoles((prev) => [...prev, nuevoRol]);
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
     }
-
-    setIsFormOpen(false);
-  };
-
-  const deleteRole = (id) => {
-    if (!confirm("¿Seguro que deseas eliminar este rol?")) return;
-    setRoles((prev) => prev.filter((r) => r.id !== id));
-  };
-
-  const toggleEstado = (id) => {
-    setRoles((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? { ...r, estado: r.estado === "Activo" ? "Inactivo" : "Activo" }
-          : r
-      )
-    );
   };
 
   const isPermChecked = (id) => formData.permisos.includes(id);
@@ -284,66 +279,84 @@ export default function Roles() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedRoles.map((role) => (
-              <tr
-                key={role.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3 font-semibold">{role.nombre}</td>
-                <td className="p-3 text-neutral-300">
-                  {role.descripcion || "—"}
-                </td>
-                <td className="p-3 text-center">
-                  {role.permisos?.length || 0} permisos
-                </td>
-                <td className="p-3 text-center">
-                  <button
-                    onClick={() => toggleEstado(role.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${
-                      role.estado === "Activo"
-                        ? "bg-green-600 text-black hover:bg-green-500"
-                        : "bg-red-600 text-black hover:bg-red-500"
-                    }`}
-                  >
-                    {role.estado}
-                  </button>
-                </td>
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openViewForm(role)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openEditForm(role)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteRole(role.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando roles...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedRoles.length === 0 && (
+            ) : error ? (
               <tr>
-                <td
-                  colSpan={5}
-                  className="p-4 text-center text-neutral-400"
-                >
+                <td colSpan={5} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadRoles}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedRoles.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="p-4 text-center text-neutral-400">
                   No se encontraron roles.
                 </td>
               </tr>
+            ) : (
+              paginatedRoles.map((role) => (
+                <tr
+                  key={role.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3 font-semibold">{role.nombre}</td>
+                  <td className="p-3 text-neutral-300">
+                    {role.descripcion || "—"}
+                  </td>
+                  <td className="p-3 text-center">
+                    {role.permisos?.length || 0} permisos
+                  </td>
+                  <td className="p-3 text-center">
+                    <button
+                      onClick={() => toggleEstado(role.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${
+                        role.estado === "Activo"
+                          ? "bg-green-600 text-black hover:bg-green-500"
+                          : "bg-red-600 text-black hover:bg-red-500"
+                      }`}
+                    >
+                      {role.estado}
+                    </button>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openViewForm(role)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openEditForm(role)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteRole(role.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

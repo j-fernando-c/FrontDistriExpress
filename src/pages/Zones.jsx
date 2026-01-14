@@ -1,5 +1,5 @@
 // src/pages/Zones.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FiSearch,
   FiEye,
@@ -7,46 +7,38 @@ import {
   FiTrash2,
   FiPlus,
 } from "react-icons/fi";
+import { zonasService } from "../services/zonasService";
 
 export default function Zones() {
-  const [zones, setZones] = useState([
-    {
-      id: 1,
-      nombre: "Zona Norte",
-      descripcion: "Zona de distribución norte - Categoría urbana",
-      observaciones: "Cobertura principal en barrios residenciales.",
-      tiendas: [
-        {
-          nombre: "Tienda Norte 1",
-          contacto: "Carlos López",
-          telefono: "555-0101",
-          direccion: "Calle 10 #12-34",
-        },
-        {
-          nombre: "Tienda Norte 2",
-          contacto: "Ana Pérez",
-          telefono: "555-0102",
-          direccion: "Carrera 15 #20-10",
-        },
-      ],
-      estado: "Activa",
-    },
-    {
-      id: 2,
-      nombre: "Zona Sur",
-      descripcion: "Zona de distribución sur - Categoría rural",
-      observaciones: "",
-      tiendas: [
-        {
-          nombre: "Tienda Sur 1",
-          contacto: "Luis Martínez",
-          telefono: "555-0201",
-          direccion: "Vereda La Esperanza",
-        },
-      ],
-      estado: "Inactiva",
-    },
-  ]);
+  const [zones, setZones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadZones();
+  }, []);
+
+  const loadZones = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await zonasService.getAll();
+      const zonesData = (response.data || []).map((z) => ({
+        id: z.id,
+        nombre: z.zona || "Sin nombre",
+        descripcion: "",
+        observaciones: "",
+        tiendas: [],
+        estado: "Activa",
+      }));
+      setZones(zonesData);
+    } catch (err) {
+      setError(err.message || "Error al cargar zonas");
+      console.error("Error cargando zonas:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
 
@@ -169,68 +161,56 @@ export default function Zones() {
     return true;
   };
 
-  const saveZone = () => {
+  const saveZone = async () => {
     if (isReadOnly) return;
     if (!validateForm()) return;
 
-    const tiendasLimpias = formData.tiendas
-      .filter((t) => t.nombre.trim() && t.direccion.trim())
-      .map((t) => ({
-        ...t,
-        contacto: t.contacto || "",
-        telefono: t.telefono || "",
-      }));
+    const data = {
+      zona: formData.nombreZona.trim(),
+      descripcion: formData.descripcion.trim(),
+      observaciones: formData.observaciones.trim(),
+      estado: "ACTIVO",
+    };
 
-    if (editingId) {
+    try {
+      if (editingId) {
+        await zonasService.update(editingId, data);
+      } else {
+        await zonasService.create(data);
+      }
+      await loadZones();
+      closeForm();
+    } catch (err) {
+      alert(err.message || "Error al guardar zona");
+    }
+  };
+
+  const deleteZone = async (id) => {
+    if (!confirm("¿Seguro que deseas eliminar esta zona?")) return;
+    try {
+      await zonasService.delete(id);
+      setZones((prev) => prev.filter((z) => z.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar zona");
+    }
+  };
+
+  const toggleEstado = async (id) => {
+    try {
+      await zonasService.toggleEstado(id);
       setZones((prev) =>
         prev.map((z) =>
-          z.id === editingId
+          z.id === id
             ? {
                 ...z,
-                nombre: formData.nombreZona,
-                descripcion: formData.descripcion,
-                observaciones: formData.observaciones,
-                tiendas: tiendasLimpias,
+                estado: z.estado === "Activa" ? "Inactiva" : "Activa",
               }
             : z
         )
       );
-    } else {
-      const newId = zones.length
-        ? Math.max(...zones.map((z) => z.id)) + 1
-        : 1;
-
-      const nuevaZona = {
-        id: newId,
-        nombre: formData.nombreZona,
-        descripcion: formData.descripcion,
-        observaciones: formData.observaciones,
-        tiendas: tiendasLimpias,
-        estado: "Activa",
-      };
-
-      setZones((prev) => [...prev, nuevaZona]);
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
     }
-
-    closeForm();
-  };
-
-  const deleteZone = (id) => {
-    if (!confirm("¿Seguro que deseas eliminar esta zona?")) return;
-    setZones((prev) => prev.filter((z) => z.id !== id));
-  };
-
-  const toggleEstado = (id) => {
-    setZones((prev) =>
-      prev.map((z) =>
-        z.id === id
-          ? {
-              ...z,
-              estado: z.estado === "Activa" ? "Inactiva" : "Activa",
-            }
-          : z
-      )
-    );
   };
 
   const estadoClasses = (estado) =>
@@ -316,63 +296,84 @@ export default function Zones() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedZones.map((z) => (
-              <tr
-                key={z.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3">{z.nombre}</td>
-                <td className="p-3">{z.descripcion}</td>
-                <td className="p-3">
-                  {z.tiendas.length}{" "}
-                  {z.tiendas.length === 1 ? "tienda" : "tiendas"}
-                </td>
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(z.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
-                      z.estado
-                    )}`}
-                  >
-                    {z.estado}
-                  </button>
-                </td>
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    {/* VER (solo lectura) */}
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openView(z)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    {/* EDITAR */}
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openForm(z)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    {/* ELIMINAR */}
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteZone(z.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando zonas...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedZones.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={5} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadZones}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedZones.length === 0 ? (
               <tr>
                 <td colSpan={5} className="p-4 text-center text-neutral-400">
                   No se encontraron zonas.
                 </td>
               </tr>
+            ) : (
+              paginatedZones.map((z) => (
+                <tr
+                  key={z.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3">{z.nombre}</td>
+                  <td className="p-3">{z.descripcion}</td>
+                  <td className="p-3">
+                    {z.tiendas?.length || 0}{" "}
+                    {z.tiendas?.length === 1 ? "tienda" : "tiendas"}
+                  </td>
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(z.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
+                        z.estado
+                      )}`}
+                    >
+                      {z.estado}
+                    </button>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      {/* VER (solo lectura) */}
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openView(z)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      {/* EDITAR */}
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openForm(z)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      {/* ELIMINAR */}
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteZone(z.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

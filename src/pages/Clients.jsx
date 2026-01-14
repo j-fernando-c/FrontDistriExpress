@@ -68,10 +68,13 @@ export default function Clients() {
   const filteredClients = clients.filter((c) => {
     const term = search.toLowerCase();
     return (
-      c.nombres.toLowerCase().includes(term) ||
+      c.nombre.includes(term) ||
+      c.documento.includes(term) ||
+      c.telefono.includes(term) ||
+      c.tipo_documento.includes(term) ||
       (c.apellidos || "").toLowerCase().includes(term) ||
       c.email.toLowerCase().includes(term) ||
-      c.ciudad.toLowerCase().includes(term)
+      c.direccion.toLowerCase().includes(term)
     );
   });
 
@@ -322,11 +325,9 @@ export default function Clients() {
               <th className="p-3 font-semibold">Cliente</th>
               {/* ✅ contacto separado */}
               <th className="p-3 font-semibold">Correo</th>
-              <th className="p-3 font-semibold">Número</th>
-              <th className="p-3 font-semibold">Ciudad</th>
-              <th className="p-3 font-semibold">Tipo</th>
-              {/* ✅ renombrado */}
               <th className="p-3 font-semibold">Documento/NIT</th>
+              <th className="p-3 font-semibold">Dirección</th>
+              {/* ✅ renombrado */}
               {/* ❌ se quita Total Compras */}
               <th className="p-3 font-semibold">Estado</th>
               <th className="p-3 font-semibold text-center">Acciones</th>
@@ -369,23 +370,25 @@ export default function Clients() {
                 >
                   <td className="p-3">
                     <div className="font-semibold">
-                      {client.nombres} {client.apellidos}
+                      {client.nombre} {client.apellidos}
                     </div>
                   </td>
 
                   {/* ✅ correo / número */}
                   <td className="p-3">{client.email}</td>
-                  <td className="p-3">{client.telefono}</td>
+                  <td className="p-3">
+                    {client.tipo_documento}- {client.documento}
+                  </td>
 
-                  <td className="p-3">{client.ciudad}</td>
-                  <td className="p-3">{client.tipoCliente}</td>
+                  <td className="p-3">{client.direccion}</td>
+                  {/* <td className="p-3">{client.tipoCliente}</td> */}
 
                   {/* ✅ documento/nit */}
-                  <td className="p-3">
+                  {/* <td className="p-3">
                     {client.tipoCliente === "Jurídico"
                       ? client.nit || "-"
                       : client.documento || "-"}
-                  </td>
+                  </td> */}
 
                   <td className="p-3">
                     <button

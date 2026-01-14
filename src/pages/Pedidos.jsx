@@ -1,5 +1,5 @@
 // src/pages/Pedidos.jsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FiSearch,
   FiEye,
@@ -10,6 +10,10 @@ import {
 } from "react-icons/fi";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { pedidosService } from "../services/pedidosService";
+import { clientesService } from "../services/clientesService";
+import { usuariosService } from "../services/usuariosService";
+import { productosService } from "../services/productosService";
 
 // Productos disponibles solo para el front (precio para calcular totales)
 const AVAILABLE_PRODUCTS = [
@@ -34,9 +38,7 @@ function AutocompleteInput({
   const filtered = useMemo(() => {
     const q = (value || "").toLowerCase().trim();
     if (!q) return items.slice(0, 8);
-    return items
-      .filter((it) => it.toLowerCase().includes(q))
-      .slice(0, 8);
+    return items.filter((it) => it.toLowerCase().includes(q)).slice(0, 8);
   }, [value, items]);
 
   return (
@@ -84,7 +86,14 @@ function AutocompleteInput({
 }
 
 export default function Pedidos() {
-  // ===== Listas quemadas =====
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [, setClientesList] = useState([]);
+  const [vendedoresList, setVendedoresList] = useState([]);
+  const [, setProductosList] = useState([]);
+
+  // ✅ Listas quemadas para autocompletar (se pueden cargar del API si hay datos)
   const CLIENTES = useMemo(
     () => [
       "Restaurante El Buen Sabor",
@@ -117,55 +126,78 @@ export default function Pedidos() {
     []
   );
 
-  const [orders, setOrders] = useState([
-    {
-      id: 1,
-      cliente: "Restaurante El Buen Sabor",
-      telefono: "555-0101",
-      fechaEntrega: "2025-02-17",
-      vendedor: "Carlos Mendoza",
-      direccion: "Calle 10 #20-30, Centro",
-      estado: "Pendiente",
-      items: [
-        {
-          productoId: "p1",
-          nombre: "Arroz integral",
-          cantidad: 5,
-          precio: 12.5,
-          subtotal: 62.5,
-        },
-        {
-          productoId: "p2",
-          nombre: "Aceite de Oliva Extra Virgen",
-          cantidad: 2,
-          precio: 23.8,
-          subtotal: 47.6,
-        },
-      ],
-      observaciones: "",
-      total: 110.1,
-    },
-    {
-      id: 2,
-      cliente: "Supermercado La Canasta",
-      telefono: "555-0102",
-      fechaEntrega: "2025-02-18",
-      vendedor: "María González",
-      direccion: "Carrera 15 #30-10, Norte",
-      estado: "En transito",
-      items: [
-        {
-          productoId: "p3",
-          nombre: "Quinua Real",
-          cantidad: 10,
-          precio: 12.8,
-          subtotal: 128,
-        },
-      ],
-      observaciones: "Entregar en horario de la tarde.",
-      total: 128,
-    },
-  ]);
+  useEffect(() => {
+    loadOrders();
+    loadClientes();
+    loadVendedores();
+    loadProductos();
+  }, []);
+
+  const loadOrders = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await pedidosService.getAll();
+      const ordersData = (response.data || []).map((p) => ({
+        id: p.id,
+        cliente: p.cliente_id ? `Cliente ${p.cliente_id}` : "Sin cliente",
+        telefono: "",
+        fechaEntrega: p.fecha ? p.fecha.split("T")[0] : "",
+        vendedor: "",
+        direccion: "",
+        estado: p.estado || "Pendiente",
+        items: [],
+        observaciones: "",
+        total: p.total_pedido || 0,
+      }));
+      setOrders(ordersData);
+    } catch (err) {
+      setError(err.message || "Error al cargar pedidos");
+      console.error("Error cargando pedidos:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadClientes = async () => {
+    try {
+      const response = await clientesService.getAll();
+      const clientesData = (response.data || []).map(
+        (c) => `${c.nombres} ${c.apellidos}`
+      );
+      if (clientesData.length > 0) {
+        setClientesList(clientesData);
+      }
+    } catch (err) {
+      console.error("Error cargando clientes:", err);
+    }
+  };
+
+  const loadVendedores = async () => {
+    try {
+      const response = await usuariosService.getAll();
+      const vendedoresData = (response.data || [])
+        .filter((u) => u.rol_id === 2)
+        .map((u) => u.nombre);
+      if (vendedoresData.length > 0) {
+        setVendedoresList(vendedoresData);
+      }
+    } catch (err) {
+      console.error("Error cargando vendedores:", err);
+    }
+  };
+
+  const loadProductos = async () => {
+    try {
+      const response = await productosService.getAll();
+      const productosData = (response.data || []).map((p) => p.nombre);
+      if (productosData.length > 0) {
+        setProductosList(productosData);
+      }
+    } catch (err) {
+      console.error("Error cargando productos:", err);
+    }
+  };
 
   const [search, setSearch] = useState("");
 
@@ -359,7 +391,7 @@ export default function Pedidos() {
     updateProducto(index, "name", nombre);
   };
 
-  const saveOrder = () => {
+  const saveOrder = async () => {
     if (isReadOnly) return;
     if (!validateForm()) return;
 
@@ -372,10 +404,11 @@ export default function Pedidos() {
       .map((p) => {
         const qty = parseFloat(p.qty) || 0;
         const price = parseFloat(p.price) || 0;
-        const found = AVAILABLE_PRODUCTS.find((ap) => ap.nombre === p.name.trim());
+        const found = AVAILABLE_PRODUCTS.find(
+          (ap) => ap.nombre === p.name.trim()
+        );
         return {
-          productoId: found ? found.id : `x-${p.name.trim()}`,
-          nombre: p.name.trim(),
+          producto_id: found ? found.id : null,
           cantidad: qty,
           precio: price,
           subtotal: qty * price,
@@ -384,70 +417,63 @@ export default function Pedidos() {
 
     const total = items.reduce((sum, it) => sum + it.subtotal, 0);
 
-    if (editingId) {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === editingId
-            ? {
-                ...o,
-                cliente: formData.cliente,
-                telefono: formData.telefono,
-                fechaEntrega: formData.fechaEntrega,
-                vendedor: formData.vendedor,
-                direccion: formData.direccion,
-                items,
-                observaciones: formData.observaciones,
-                total,
-              }
-            : o
-        )
-      );
-    } else {
-      const newId = orders.length
-        ? Math.max(...orders.map((o) => o.id)) + 1
-        : 1;
+    const data = {
+      cliente_id: null,
+      fecha: formData.fechaEntrega,
+      estado: "Pendiente",
+      cantidad_productos: items.reduce((sum, it) => sum + it.cantidad, 0),
+      total_pedido: total,
+      observaciones: formData.observaciones,
+      items,
+    };
 
-      setOrders((prev) => [
-        ...prev,
-        {
-          id: newId,
-          cliente: formData.cliente,
-          telefono: formData.telefono,
-          fechaEntrega: formData.fechaEntrega,
-          vendedor: formData.vendedor,
-          direccion: formData.direccion,
-          items,
-          observaciones: formData.observaciones,
-          estado: "Pendiente",
-          total,
-        },
-      ]);
+    try {
+      if (editingId) {
+        await pedidosService.update(editingId, data);
+      } else {
+        await pedidosService.create(data);
+      }
+      await loadOrders();
+      closeForm();
+    } catch (err) {
+      alert(err.message || "Error al guardar pedido");
     }
-
-    closeForm();
   };
 
-  const deleteOrder = (id) => {
+  const deleteOrder = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar este pedido?")) return;
-    setOrders((prev) => prev.filter((o) => o.id !== id));
+    try {
+      await pedidosService.delete(id);
+      setOrders((prev) => prev.filter((o) => o.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar pedido");
+    }
   };
 
   // ✅ toggle 4 estados
-  const toggleEstado = (id) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== id) return o;
-        const idx = ESTADOS.indexOf(o.estado);
-        const next = ESTADOS[(idx + 1) % ESTADOS.length] || "Pendiente";
-        return { ...o, estado: next };
-      })
-    );
+  const toggleEstado = async (id) => {
+    try {
+      await pedidosService.toggleEstado(id);
+      setOrders((prev) =>
+        prev.map((o) => {
+          if (o.id !== id) return o;
+          const idx = ESTADOS.indexOf(o.estado);
+          const next = ESTADOS[(idx + 1) % ESTADOS.length] || "Pendiente";
+          return { ...o, estado: next };
+        })
+      );
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
+    }
   };
 
   const estadoClasses = (estado) => {
-    if (estado === "Completada") return "bg-green-600 text-black hover:bg-green-500";
-    if (estado === "Pendiente") return "bg-yellow-500 text-black hover:bg-yellow-400";
-    if (estado === "En transito") return "bg-blue-600 text-black hover:bg-blue-500";
+    if (estado === "Completada")
+      return "bg-green-600 text-black hover:bg-green-500";
+    if (estado === "Pendiente")
+      return "bg-yellow-500 text-black hover:bg-yellow-400";
+    if (estado === "En transito")
+      return "bg-blue-600 text-black hover:bg-blue-500";
     return "bg-red-600 text-black hover:bg-red-500"; // Anulado
   };
 
@@ -545,79 +571,100 @@ export default function Pedidos() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedOrders.map((o) => (
-              <tr
-                key={o.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3">
-                  <div className="font-semibold">{o.cliente}</div>
-                  <div className="text-xs text-neutral-400">{o.telefono}</div>
-                </td>
-
-                <td className="p-3">{o.fechaEntrega}</td>
-
-                <td className="p-3">{o.vendedor}</td>
-
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(o.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
-                      o.estado
-                    )}`}
-                  >
-                    {o.estado}
-                  </button>
-                </td>
-
-                <td className="p-3 font-semibold text-green-400">
-                  ${o.total.toFixed(2)}
-                </td>
-
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    {/* VER (solo lectura) */}
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openView(o)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    {/* PDF */}
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => generatePdf(o)}
-                    >
-                      <FiFileText className="text-lg" />
-                    </button>
-
-                    {/* EDITAR */}
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openForm(o)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    {/* ELIMINAR */}
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteOrder(o.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando pedidos...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedOrders.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={6} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadOrders}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedOrders.length === 0 ? (
               <tr>
                 <td colSpan={6} className="p-4 text-center text-neutral-400">
                   No se encontraron pedidos.
                 </td>
               </tr>
+            ) : (
+              paginatedOrders.map((o) => (
+                <tr
+                  key={o.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3">
+                    <div className="font-semibold">{o.cliente}</div>
+                    <div className="text-xs text-neutral-400">{o.telefono}</div>
+                  </td>
+
+                  <td className="p-3">{o.fechaEntrega}</td>
+
+                  <td className="p-3">{o.vendedor}</td>
+
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(o.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
+                        o.estado
+                      )}`}
+                    >
+                      {o.estado}
+                    </button>
+                  </td>
+
+                  <td className="p-3 font-semibold text-green-400">
+                    {/* ${o.total.toFixed(2)} */}
+                  </td>
+
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      {/* VER (solo lectura) */}
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openView(o)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      {/* PDF */}
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => generatePdf(o)}
+                      >
+                        <FiFileText className="text-lg" />
+                      </button>
+
+                      {/* EDITAR */}
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openForm(o)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      {/* ELIMINAR */}
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteOrder(o.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -793,7 +840,7 @@ export default function Pedidos() {
                       }
                     >
                       <option value="">Seleccionar vendedor</option>
-                      {VENDEDORES.map((v) => (
+                      {[...VENDEDORES, ...vendedoresList].map((v) => (
                         <option key={v} value={v}>
                           {v}
                         </option>
@@ -803,7 +850,8 @@ export default function Pedidos() {
 
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-neutral-300">
-                      Dirección de Entrega <span className="text-red-500">*</span>
+                      Dirección de Entrega{" "}
+                      <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -871,7 +919,9 @@ export default function Pedidos() {
                             inputClassName={`w-full p-2.5 bg-neutral-900 border border-neutral-700 rounded-xl text-sm text-neutral-200 outline-none ${
                               !isReadOnly && "focus:border-green-500"
                             } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
-                            onChange={(val) => updateProducto(index, "name", val)}
+                            onChange={(val) =>
+                              updateProducto(index, "name", val)
+                            }
                             onPick={(val) => pickProducto(index, val)}
                           />
                         </div>

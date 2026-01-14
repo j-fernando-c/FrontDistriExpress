@@ -1,5 +1,5 @@
 // src/pages/Providers.jsx  (o Proveedores.jsx)
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FiSearch,
   FiEye,
@@ -8,6 +8,7 @@ import {
   FiUser,
   FiBriefcase,
 } from "react-icons/fi";
+import { proveedorService } from "../services/proveedorService";
 
 const COLOMBIA_CITIES = [
   "Bogotá",
@@ -23,33 +24,27 @@ const COLOMBIA_CITIES = [
 ];
 
 export default function Providers() {
-  // ===== DATA INICIAL =====
-  const [providers, setProviders] = useState([
-    {
-      id: 1,
-      nombre: "Distribuidora Nacional de Granos S.A.S.",
-      tipoPersona: "Jurídica",
-      documentoNit: "900123456-1",
-      telefono: "555-0101",
-      email: "contacto@distribuidoranacional.com",
-      ciudad: "Bogotá",
-      direccion: "Cra 10 #20-30",
-      observaciones: "",
-      estado: "Activo",
-    },
-    {
-      id: 2,
-      nombre: "Aceites Premium Colombia Ltda.",
-      tipoPersona: "Jurídica",
-      documentoNit: "800234567-2",
-      telefono: "555-0102",
-      email: "ventas@aceitespremium.com",
-      ciudad: "Medellín",
-      direccion: "Cl 45 #55-10",
-      observaciones: "",
-      estado: "Activo",
-    },
-  ]);
+  const [providers, setProviders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadProviders();
+  }, []);
+
+  const loadProviders = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await proveedorService.getAll();
+      setProviders(response.data || []);
+    } catch (err) {
+      setError(err.message || "Error al cargar proveedores");
+      console.error("Error cargando proveedores:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -87,9 +82,9 @@ export default function Providers() {
   // ===== FORM DATA =====
   const emptyForm = {
     nombre: "",
-    tipoPersona: "Jurídica",
-    documentoNit: "",
-    telefono: "",
+    tipo: "Jurídica",
+    documento: "",
+    contacto: "",
     email: "",
     ciudad: "",
     direccion: "",
@@ -109,11 +104,11 @@ export default function Providers() {
   }, [cityQuery]);
 
   const handleChange = (field, value) => {
-    if (field === "tipoPersona") {
+    if (field === "tipo") {
       setFormData((prev) => ({
         ...prev,
-        tipoPersona: value,
-        documentoNit: prev.documentoNit, // no lo borro, solo cambia el label/placeholder
+        tipo: value,
+        documento: prev.documento,
       }));
       return;
     }
@@ -135,9 +130,9 @@ export default function Providers() {
     setEditingId(provider.id);
     setFormData({
       nombre: provider.nombre,
-      tipoPersona: provider.tipoPersona,
-      documentoNit: provider.documentoNit,
-      telefono: provider.telefono,
+      tipo: provider.tipo || provider.tipoPersona,
+      documento: provider.documento || provider.documentoNit,
+      contacto: provider.contacto || provider.telefono,
       email: provider.email,
       ciudad: provider.ciudad,
       direccion: provider.direccion,
@@ -153,9 +148,9 @@ export default function Providers() {
     setEditingId(null);
     setFormData({
       nombre: provider.nombre,
-      tipoPersona: provider.tipoPersona,
-      documentoNit: provider.documentoNit,
-      telefono: provider.telefono,
+      tipo: provider.tipo || provider.tipoPersona,
+      documento: provider.documento || provider.documentoNit,
+      contacto: provider.contacto || provider.telefono,
       email: provider.email,
       ciudad: provider.ciudad,
       direccion: provider.direccion,
@@ -176,16 +171,16 @@ export default function Providers() {
       alert("El nombre del proveedor es obligatorio");
       return false;
     }
-    if (!formData.tipoPersona) {
+    if (!formData.tipo) {
       alert("El tipo de proveedor es obligatorio");
       return false;
     }
-    if (!formData.documentoNit.trim()) {
-      alert(formData.tipoPersona === "Jurídica" ? "El NIT es obligatorio" : "El documento es obligatorio");
+    if (!formData.documento.trim()) {
+      alert(formData.tipo === "Jurídica" ? "El NIT es obligatorio" : "El documento es obligatorio");
       return false;
     }
-    if (!formData.telefono.trim()) {
-      alert("El teléfono es obligatorio");
+    if (!formData.contacto.trim()) {
+      alert("El contacto es obligatorio");
       return false;
     }
     if (!formData.email.trim()) {
@@ -208,50 +203,56 @@ export default function Providers() {
     return true;
   };
 
-  const saveProvider = () => {
+  const saveProvider = async () => {
     if (!validateForm()) return;
 
-    const providerBase = {
+    const data = {
       nombre: formData.nombre.trim(),
-      tipoPersona: formData.tipoPersona,
-      documentoNit: formData.documentoNit.trim(),
-      telefono: formData.telefono.trim(),
+      tipo: formData.tipoPersona,
+      documento: formData.documentoNit.trim(),
+      contacto: formData.telefono.trim(),
       email: formData.email.trim(),
       ciudad: formData.ciudad.trim(),
       direccion: formData.direccion.trim(),
       observaciones: (formData.observaciones || "").trim(),
     };
 
-    if (editingId) {
-      setProviders((prev) =>
-        prev.map((p) => (p.id === editingId ? { ...p, ...providerBase } : p))
-      );
-    } else {
-      const newId = providers.length ? Math.max(...providers.map((p) => p.id)) + 1 : 1;
-      setProviders((prev) => [
-        ...prev,
-        {
-          id: newId,
-          ...providerBase,
-          estado: "Activo",
-        },
-      ]);
+    try {
+      if (editingId) {
+        await proveedorService.update(editingId, data);
+      } else {
+        await proveedorService.create(data);
+      }
+      await loadProviders();
+      setIsFormOpen(false);
+    } catch (err) {
+      alert(err.message || "Error al guardar proveedor");
     }
-
-    setIsFormOpen(false);
   };
 
-  const deleteProvider = (id) => {
+  const deleteProvider = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar este proveedor?")) return;
-    setProviders((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await proveedorService.delete(id);
+      setProviders((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar proveedor");
+    }
   };
 
-  const toggleEstado = (id) => {
-    setProviders((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, estado: p.estado === "Activo" ? "Inactivo" : "Activo" } : p
-      )
-    );
+  const toggleEstado = async (id) => {
+    try {
+      await proveedorService.toggleEstado(id);
+      setProviders((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...p, estado: p.estado === "ACTIVO" ? "Inactivo" : "Activo" }
+            : p
+        )
+      );
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
+    }
   };
 
   const disabledField = isViewMode;
@@ -315,71 +316,92 @@ export default function Providers() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedProviders.map((p) => (
-              <tr
-                key={p.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3">
-                  <div className="font-semibold text-white">{p.nombre}</div>
-                </td>
-
-                <td className="p-3">{p.email}</td>
-                <td className="p-3">{p.telefono}</td>
-
-                <td className="p-3">
-                  <span className="px-3 py-1 rounded-full text-xs bg-neutral-800 border border-neutral-700">
-                    {p.tipoPersona}
-                  </span>
-                </td>
-
-                <td className="p-3">{p.documentoNit}</td>
-                <td className="p-3">{p.ciudad}</td>
-
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(p.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoBtnClass(
-                      p.estado
-                    )}`}
-                  >
-                    {p.estado}
-                  </button>
-                </td>
-
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openFormForView(p)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openFormForEdit(p)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteProvider(p.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={8} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando proveedores...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedProviders.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={8} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadProviders}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedProviders.length === 0 ? (
               <tr>
                 <td colSpan={8} className="p-4 text-center text-neutral-400">
                   No se encontraron proveedores.
                 </td>
               </tr>
+            ) : (
+              paginatedProviders.map((p) => (
+                <tr
+                  key={p.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3">
+                    <div className="font-semibold text-white">{p.nombre}</div>
+                  </td>
+
+                  <td className="p-3">{p.email}</td>
+                  <td className="p-3">{p.contacto || p.telefono}</td>
+
+                  <td className="p-3">
+                    <span className="px-3 py-1 rounded-full text-xs bg-neutral-800 border border-neutral-700">
+                      {p.tipo || p.tipoPersona}
+                    </span>
+                  </td>
+
+                  <td className="p-3">{p.documento || p.documentoNit}</td>
+                  <td className="p-3">{p.ciudad}</td>
+
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(p.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoBtnClass(
+                        p.estado === "ACTIVO" ? "Activo" : "Inactivo"
+                      )}`}
+                    >
+                      {p.estado === "ACTIVO" ? "Activo" : "Inactivo"}
+                    </button>
+                  </td>
+
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openFormForView(p)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openFormForEdit(p)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteProvider(p.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -464,13 +486,78 @@ export default function Providers() {
                     </label>
                     <select
                       className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
-                      value={formData.tipoPersona}
-                      onChange={(e) => handleChange("tipoPersona", e.target.value)}
+                      value={formData.tipo}
+                      onChange={(e) => handleChange("tipo", e.target.value)}
                       disabled={disabledField}
                     >
                       <option value="Jurídica">Jurídica</option>
                       <option value="Natural">Natural</option>
                     </select>
+                  </div>
+
+                  {/* Nombre */}
+                  <div className="flex flex-col gap-1 md:col-span-2">
+                    <label className="text-sm">
+                      Nombre de proveedor <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
+                      value={formData.nombre}
+                      onChange={(e) => handleChange("nombre", e.target.value)}
+                      disabled={disabledField}
+                      placeholder="Nombre o razón social"
+                    />
+                  </div>
+
+                  {/* Documento/NIT */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm">
+                      {formData.tipo === "Jurídica" ? "NIT" : "Documento"}{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
+                      value={formData.documento}
+                      onChange={(e) => handleChange("documento", e.target.value)}
+                      disabled={disabledField}
+                      placeholder={
+                        formData.tipo === "Jurídica"
+                          ? "Número de NIT"
+                          : "Número de documento"
+                      }
+                    />
+                  </div>
+
+                  {/* Contacto */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm">
+                      Contacto <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
+                      value={formData.contacto}
+                      onChange={(e) => handleChange("contacto", e.target.value)}
+                      disabled={disabledField}
+                      placeholder="Teléfono de contacto"
+                    />
+                  </div>
+
+                  {/* Email */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm">
+                      Correo <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
+                      value={formData.email}
+                      onChange={(e) => handleChange("email", e.target.value)}
+                      disabled={disabledField}
+                      placeholder="correo@empresa.com"
+                    />
                   </div>
 
                   {/* Nombre */}
