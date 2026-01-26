@@ -32,9 +32,8 @@ export default function Categories() {
   const [editingId, setEditingId] = useState(null);
 
   const emptyForm = {
-    nombre: "",
+    nombre_categoria: "",
     descripcion: "",
-    estado: "activo",
   };
 
   const [formData, setFormData] = useState(emptyForm);
@@ -46,7 +45,7 @@ export default function Categories() {
 
   const filteredCategories = categories.filter(
     (c) =>
-      (c.nombre || "").toLowerCase().includes(search.toLowerCase()) ||
+      (c.nombre_categoria || "").toLowerCase().includes(search.toLowerCase()) ||
       (c.descripcion || "").toLowerCase().includes(search.toLowerCase()),
   );
 
@@ -83,9 +82,8 @@ export default function Categories() {
     setIsViewMode(false);
     setEditingId(cat.id);
     setFormData({
-      nombre: cat.nombre || "",
+      nombre_categoria: cat.nombre_categoria || "",
       descripcion: cat.descripcion || "",
-      estado: cat.estado || "activo",
     });
     setErrors({});
     setIsModalOpen(true);
@@ -95,9 +93,8 @@ export default function Categories() {
     setIsViewMode(true);
     setEditingId(cat.id);
     setFormData({
-      nombre: cat.nombre || "",
+      nombre_categoria: cat.nombre_categoria || "",
       descripcion: cat.descripcion || "",
-      estado: cat.estado || "activo",
     });
     setErrors({});
     setIsModalOpen(true);
@@ -122,8 +119,8 @@ export default function Categories() {
   const validate = () => {
     const newErrors = {};
 
-    if (!formData.nombre.trim()) {
-      newErrors.nombre = "El nombre de la categoría es obligatorio";
+    if (!formData.nombre_categoria.trim()) {
+      newErrors.nombre_categoria = "El nombre de la categoría es obligatorio";
     }
 
     if (!formData.descripcion.trim()) {
@@ -141,7 +138,7 @@ export default function Categories() {
     if (!validate()) return;
 
     const data = {
-      nombre: formData.nombre.trim(),
+      nombre_categoria: formData.nombre_categoria.trim(),
       descripcion: formData.descripcion.trim(),
     };
 
@@ -235,6 +232,7 @@ export default function Categories() {
             <tr>
               <th className="p-3 font-semibold">Categoría</th>
               <th className="p-3 font-semibold">Descripción</th>
+              <th className="p-3 font-semibold">Productos</th>
               <th className="p-3 font-semibold">Estado</th>
               <th className="p-3 font-semibold text-center">Acciones</th>
             </tr>
@@ -243,7 +241,7 @@ export default function Categories() {
           <tbody className="text-sm text-neutral-200">
             {loading ? (
               <tr>
-                <td colSpan={4} className="p-8 text-center text-neutral-400">
+                <td colSpan={5} className="p-8 text-center text-neutral-400">
                   <div className="flex items-center justify-center gap-2">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
                     Cargando categorías...
@@ -252,7 +250,7 @@ export default function Categories() {
               </tr>
             ) : error ? (
               <tr>
-                <td colSpan={4} className="p-4 text-center text-red-400">
+                <td colSpan={5} className="p-4 text-center text-red-400">
                   {error}
                   <button
                     onClick={loadCategories}
@@ -264,7 +262,7 @@ export default function Categories() {
               </tr>
             ) : paginatedCategories.length === 0 ? (
               <tr>
-                <td colSpan={4} className="p-4 text-center text-neutral-400">
+                <td colSpan={5} className="p-4 text-center text-neutral-400">
                   No se encontraron categorías.
                 </td>
               </tr>
@@ -281,6 +279,12 @@ export default function Categories() {
                   </td>
 
                   <td className="p-3 text-neutral-300">{cat.descripcion}</td>
+
+                  <td className="p-3">
+                    <span className="inline-flex items-center justify-center bg-neutral-800 text-neutral-200 rounded-full px-3 py-1 text-xs font-semibold">
+                      {cat.cantidad_productos || 0}
+                    </span>
+                  </td>
 
                   <td className="p-3">
                     <button
@@ -402,17 +406,19 @@ export default function Categories() {
                 </label>
                 <input
                   type="text"
-                  name="nombre"
+                  name="nombre_categoria"
                   className={`${inputBase} ${
-                    errors.nombre ? "border-red-500" : ""
+                    errors.nombre_categoria ? "border-red-500" : ""
                   } ${isViewMode ? disabledInput : ""}`}
                   placeholder="Ej: Granos y Cereales, Aceites y Vinagres, etc."
-                  value={formData.nombre}
+                  value={formData.nombre_categoria}
                   onChange={handleChange}
                   disabled={isViewMode}
                 />
-                {errors.nombre && (
-                  <p className="text-xs text-red-400 mt-1">{errors.nombre}</p>
+                {errors.nombre_categoria && (
+                  <p className="text-xs text-red-400 mt-1">
+                    {errors.nombre_categoria}
+                  </p>
                 )}
               </div>
 

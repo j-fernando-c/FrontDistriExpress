@@ -5,19 +5,6 @@ import { productosService } from "../services/productosService";
 import { categoriasService } from "../services/categoriasService";
 
 export default function Products() {
-  // ====== Listas (quemadas por ahora) ======
-  const UNIDADES = useMemo(
-    () => [
-      "Sin medida",
-      "Mililitros",
-      "Litros",
-      "Libras",
-      "Miligramos",
-      "Kilos",
-    ],
-    [],
-  );
-
   // ====== Data ======
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -61,11 +48,13 @@ export default function Products() {
   // ====== Form ======
   const emptyForm = {
     name: "",
+    description: "",
     category: "",
-    unit: "Sin medida",
-    qty: "1",
+    categoryId: "",
+    qty: "0",
     price: "0",
-    // estado NO existe en el formulario (siempre inicia Activo)
+    stockMin: "0",
+    stockMax: "0",
   };
 
   const [formData, setFormData] = useState(emptyForm);
@@ -118,9 +107,13 @@ export default function Products() {
     setEditingId(product.id);
     setFormData({
       name: product.nombre || "",
+      description: product.descripcion || "",
       category: product.categoria_nombre || "",
-      qty: String(product.cantidad ?? "1"),
-      price: String(product.precio ?? "0"),
+      categoryId: product.categoria_id || "",
+      qty: String(product.cantidad ?? 0),
+      price: String(product.precio ?? 0),
+      stockMin: String(product.stock_min ?? 0),
+      stockMax: String(product.stock_max ?? 0),
     });
     setErrors({});
     setIsModalOpen(true);
@@ -131,9 +124,13 @@ export default function Products() {
     setEditingId(product.id);
     setFormData({
       name: product.nombre || "",
+      description: product.descripcion || "",
       category: product.categoria_nombre || "",
-      qty: String(product.cantidad ?? "1"),
-      price: String(product.precio ?? "0"),
+      categoryId: product.categoria_id || "",
+      qty: String(product.cantidad ?? 0),
+      price: String(product.precio ?? 0),
+      stockMin: String(product.stock_min ?? 0),
+      stockMax: String(product.stock_max ?? 0),
     });
     setErrors({});
     setIsModalOpen(true);
@@ -150,8 +147,26 @@ export default function Products() {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
+    // Si cambia la categoría, actualizar también categoryId
+    if (name === "category") {
+      const selectedCat = categories.find(
+        (cat) => cat.nombre_categoria === value,
+      );
+      setFormData((prev) => ({
+        ...prev,
+        category: value,
+        categoryId: selectedCat ? selectedCat.id : "",
+      }));
+      return;
+    }
+
     // Mantener strings para permitir sobreescribir el "0"
-    if (name === "qty" || name === "price") {
+    if (
+      name === "qty" ||
+      name === "price" ||
+      name === "stockMin" ||
+      name === "stockMax"
+    ) {
       setFormData((prev) => ({ ...prev, [name]: value }));
       return;
     }
@@ -171,8 +186,8 @@ export default function Products() {
       newErrors.qty = "La cantidad es obligatoria";
     } else {
       const n = Number(formData.qty);
-      if (Number.isNaN(n) || n <= 0)
-        newErrors.qty = "La cantidad debe ser mayor a 0";
+      if (Number.isNaN(n) || n < 0)
+        newErrors.qty = "La cantidad debe ser 0 o mayor";
     }
 
     if (!formData.price.toString().trim()) {
@@ -181,6 +196,24 @@ export default function Products() {
       const n = Number(formData.price);
       if (Number.isNaN(n) || n < 0)
         newErrors.price = "El precio debe ser 0 o mayor";
+    }
+
+    if (!formData.stockMin.toString().trim()) {
+      newErrors.stockMin = "El stock mínimo es obligatorio";
+    } else {
+      const n = Number(formData.stockMin);
+      if (Number.isNaN(n) || n < 0)
+        newErrors.stockMin = "El stock mínimo debe ser 0 o mayor";
+    }
+
+    if (!formData.stockMax.toString().trim()) {
+      newErrors.stockMax = "El stock máximo es obligatorio";
+    } else {
+      const n = Number(formData.stockMax);
+      if (Number.isNaN(n) || n < 0)
+        newErrors.stockMax = "El stock máximo debe ser 0 o mayor";
+      else if (Number(formData.stockMin) > n)
+        newErrors.stockMax = "El stock máximo debe ser mayor al mínimo";
     }
 
     setErrors(newErrors);
@@ -198,10 +231,13 @@ export default function Products() {
     if (!validate()) return;
 
     const data = {
-      nombre: formData.nombre.trim(),
-      categoria_nombre: formData.category.trim(),
+      nombre: formData.name.trim(),
+      descripcion: formData.description.trim(),
+      categoria_id: formData.categoryId,
       cantidad: toNumberSafe(formData.qty),
       precio: toNumberSafe(formData.price),
+      stock_min: toNumberSafe(formData.stockMin),
+      stock_max: toNumberSafe(formData.stockMax),
     };
 
     try {
@@ -229,12 +265,11 @@ export default function Products() {
 
   const toggleEstado = async (id) => {
     try {
-      const product = products.find((p) => p.id === id);
       await productosService.toggleEstado(id);
       setProducts((prev) =>
         prev.map((p) =>
           p.id === id
-            ? { ...p, estado: p.estado === "Activo" ? "Inactivo" : "Activo" }
+            ? { ...p, estado: p.estado === "activo" ? "inactivo" : "activo" }
             : p,
         ),
       );
@@ -297,8 +332,9 @@ export default function Products() {
             <tr>
               <th className="p-3 font-semibold">Producto</th>
               <th className="p-3 font-semibold">Categoría</th>
-              <th className="p-3 font-semibold">Cantidad</th>
-              <th className="p-3 font-semibold">Precio Unidad</th>
+              <th className="p-3 font-semibold">Stock</th>
+              <th className="p-3 font-semibold">Stock Min/Max</th>
+              <th className="p-3 font-semibold">Precio</th>
               <th className="p-3 font-semibold">Estado</th>
               <th className="p-3 font-semibold text-center">Acciones</th>
             </tr>
@@ -340,7 +376,20 @@ export default function Products() {
                 >
                   <td className="p-3 font-medium text-white">{p.nombre}</td>
                   <td className="p-3 text-neutral-300">{p.categoria_nombre}</td>
-                  <td className="p-3 text-neutral-300">{p.cantidad}</td>
+                  <td className="p-3 text-neutral-300">
+                    <span
+                      className={
+                        p.cantidad <= p.stock_min
+                          ? "text-red-400 font-semibold"
+                          : ""
+                      }
+                    >
+                      {p.cantidad}
+                    </span>
+                  </td>
+                  <td className="p-3 text-neutral-300 text-sm">
+                    {p.stock_min} / {p.stock_max}
+                  </td>
                   <td className="p-3 text-green-400 font-semibold">
                     {money(p.precio)}
                   </td>
@@ -350,12 +399,12 @@ export default function Products() {
                       onClick={() => toggleEstado(p.id)}
                       className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
                       ${
-                        p.estado === "Activo"
+                        p.estado === "activo"
                           ? "bg-green-600 text-black hover:bg-green-500"
                           : "bg-red-600 text-black hover:bg-red-500"
                       }`}
                     >
-                      {p.estado}
+                      {p.estado === "activo" ? "Activo" : "Inactivo"}
                     </button>
                   </td>
 
@@ -457,87 +506,104 @@ export default function Products() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Nombre + Unidad (al lado) */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300">
-                    Nombre del Producto <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    className={`${inputBase} ${
-                      errors.name ? "border-red-500" : ""
-                    } ${isViewMode ? disabledInput : ""}`}
-                    placeholder="Nombre del producto"
-                    value={formData.name}
-                    onChange={handleChange}
-                    disabled={isViewMode}
-                  />
-                  {errors.name && (
-                    <p className="text-xs text-red-400 mt-1">{errors.name}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-neutral-300">
-                    Unidad de Medida <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="unit"
-                    className={`${inputBase} ${
-                      errors.unit ? "border-red-500" : ""
-                    } ${isViewMode ? disabledInput : ""}`}
-                    value={formData.unit}
-                    onChange={handleChange}
-                    disabled={isViewMode}
-                  >
-                    {UNIDADES.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.unit && (
-                    <p className="text-xs text-red-400 mt-1">{errors.unit}</p>
-                  )}
-                </div>
+              {/* Nombre */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300">
+                  Nombre del Producto <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  className={`${inputBase} ${
+                    errors.name ? "border-red-500" : ""
+                  } ${isViewMode ? disabledInput : ""}`}
+                  placeholder="Nombre del producto"
+                  value={formData.name}
+                  onChange={handleChange}
+                  disabled={isViewMode}
+                />
+                {errors.name && (
+                  <p className="text-xs text-red-400 mt-1">{errors.name}</p>
+                )}
               </div>
 
-              {/* Categoría (select) + Cantidad */}
+              {/* Descripción */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300">
+                  Descripción
+                </label>
+                <textarea
+                  name="description"
+                  rows="3"
+                  className={`${inputBase} ${
+                    errors.description ? "border-red-500" : ""
+                  } ${isViewMode ? disabledInput : ""}`}
+                  placeholder="Descripción del producto"
+                  value={formData.description}
+                  onChange={handleChange}
+                  disabled={isViewMode}
+                />
+                {errors.description && (
+                  <p className="text-xs text-red-400 mt-1">
+                    {errors.description}
+                  </p>
+                )}
+              </div>
+
+              {/* Categoría */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300">
+                  Categoría <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="category"
+                  className={`${inputBase} ${
+                    errors.category ? "border-red-500" : ""
+                  } ${isViewMode ? disabledInput : ""}`}
+                  value={formData.category}
+                  onChange={handleChange}
+                  disabled={isViewMode}
+                >
+                  <option value="">Seleccionar categoría...</option>
+                  {categories
+                    .filter((cat) => cat.estado === "activo")
+                    .map((cat) => (
+                      <option key={cat.id} value={cat.nombre_categoria}>
+                        {cat.nombre_categoria}
+                      </option>
+                    ))}
+                </select>
+                {errors.category && (
+                  <p className="text-xs text-red-400 mt-1">{errors.category}</p>
+                )}
+              </div>
+
+              {/* Precio y Cantidad */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-neutral-300">
-                    Categoría <span className="text-red-500">*</span>
+                    Precio Unitario <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    name="category"
+                  <input
+                    type="number"
+                    name="price"
                     className={`${inputBase} ${
-                      errors.category ? "border-red-500" : ""
+                      errors.price ? "border-red-500" : ""
                     } ${isViewMode ? disabledInput : ""}`}
-                    value={formData.category}
+                    value={formData.price}
                     onChange={handleChange}
                     disabled={isViewMode}
-                  >
-                    <option value="">Seleccionar categoría...</option>
-                    {categories
-                      .filter((cat) => cat.estado === "activo")
-                      .map((cat) => (
-                        <option key={cat.id} value={cat.nombre_categoria}>
-                          {cat.nombre_categoria}
-                        </option>
-                      ))}
-                  </select>
-                  {errors.category && (
-                    <p className="text-xs text-red-400 mt-1">
-                      {errors.category}
-                    </p>
+                    min="0"
+                    step="0.01"
+                  />
+                  {errors.price && (
+                    <p className="text-xs text-red-400 mt-1">{errors.price}</p>
                   )}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-neutral-300">
-                    Cantidad <span className="text-red-500">*</span>
+                    Cantidad Actual <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -556,36 +622,51 @@ export default function Products() {
                 </div>
               </div>
 
-              {/* Precio unitario (se puede sobreescribir el 0) */}
+              {/* Stock Mínimo y Máximo */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-neutral-300">
-                    Precio Unitario <span className="text-red-500">*</span>
+                    Stock Mínimo <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
-                    name="price"
+                    name="stockMin"
                     className={`${inputBase} ${
-                      errors.price ? "border-red-500" : ""
+                      errors.stockMin ? "border-red-500" : ""
                     } ${isViewMode ? disabledInput : ""}`}
-                    value={formData.price}
+                    value={formData.stockMin}
                     onChange={handleChange}
                     disabled={isViewMode}
                     min="0"
-                    onFocus={() => {
-                      if (isViewMode) return;
-                      if (String(formData.price) === "0") {
-                        setFormData((prev) => ({ ...prev, price: "" }));
-                      }
-                    }}
                   />
-                  {errors.price && (
-                    <p className="text-xs text-red-400 mt-1">{errors.price}</p>
+                  {errors.stockMin && (
+                    <p className="text-xs text-red-400 mt-1">
+                      {errors.stockMin}
+                    </p>
                   )}
                 </div>
 
-                {/* Campo vacío para mantener layout */}
-                <div className="hidden md:block" />
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300">
+                    Stock Máximo <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="stockMax"
+                    className={`${inputBase} ${
+                      errors.stockMax ? "border-red-500" : ""
+                    } ${isViewMode ? disabledInput : ""}`}
+                    value={formData.stockMax}
+                    onChange={handleChange}
+                    disabled={isViewMode}
+                    min="0"
+                  />
+                  {errors.stockMax && (
+                    <p className="text-xs text-red-400 mt-1">
+                      {errors.stockMax}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Botones */}
@@ -607,8 +688,6 @@ export default function Products() {
                   </button>
                 )}
               </div>
-
-              {/* Nota: Estado NO está en el formulario por requisito */}
             </form>
           </div>
         </div>

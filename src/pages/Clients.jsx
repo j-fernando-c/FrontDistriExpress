@@ -30,6 +30,7 @@ export default function Clients() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewMode, setIsViewMode] = useState(false); // solo lectura
   const [editingId, setEditingId] = useState(null);
+  const [errors, setErrors] = useState({});
 
   // paginación
   const [currentPage, setCurrentPage] = useState(1);
@@ -119,12 +120,14 @@ export default function Clients() {
       });
     }
     setIsViewMode(viewMode);
+    setErrors({});
     setIsFormOpen(true);
   };
 
   const closeForm = () => {
     setIsFormOpen(false);
     setIsViewMode(false);
+    setErrors({});
   };
 
   const handleChange = (field, value) => {
@@ -132,36 +135,31 @@ export default function Clients() {
   };
 
   const validateForm = () => {
+    const newErrors = {};
+
     if (!formData.nombre.trim()) {
-      alert("El nombre es obligatorio");
-      return false;
+      newErrors.nombre = "El nombre es obligatorio";
     }
     if (!formData.tipo_documento.trim()) {
-      alert("El tipo de documento es obligatorio");
-      return false;
+      newErrors.tipo_documento = "El tipo de documento es obligatorio";
     }
     if (!formData.documento.trim()) {
-      alert("El documento es obligatorio");
-      return false;
+      newErrors.documento = "El documento es obligatorio";
     }
     if (!formData.email.trim()) {
-      alert("El email es obligatorio");
-      return false;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      alert("El email no tiene un formato válido");
-      return false;
+      newErrors.email = "El email es obligatorio";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = "El email no tiene un formato válido";
     }
     if (!formData.telefono.trim()) {
-      alert("El teléfono es obligatorio");
-      return false;
+      newErrors.telefono = "El teléfono es obligatorio";
     }
     if (!formData.direccion.trim()) {
-      alert("La dirección es obligatoria");
-      return false;
+      newErrors.direccion = "La dirección es obligatoria";
     }
 
-    return true;
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const saveClient = async () => {
@@ -431,11 +429,17 @@ export default function Clients() {
                 </label>
                 <input
                   type="text"
-                  className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
+                  className={`w-full p-3 bg-neutral-800 border rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60 ${
+                    errors.nombre ? "border-red-500" : "border-neutral-700"
+                  }`}
                   value={formData.nombre}
                   onChange={(e) => handleChange("nombre", e.target.value)}
                   disabled={isViewMode}
+                  placeholder="Nombre del cliente"
                 />
+                {errors.nombre && (
+                  <p className="text-xs text-red-400 mt-1">{errors.nombre}</p>
+                )}
               </div>
 
               <div className="flex flex-col gap-1">
@@ -443,7 +447,11 @@ export default function Clients() {
                   Tipo de documento <span className="text-red-500">*</span>
                 </label>
                 <select
-                  className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
+                  className={`w-full p-3 bg-neutral-800 border rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60 ${
+                    errors.tipo_documento
+                      ? "border-red-500"
+                      : "border-neutral-700"
+                  }`}
                   value={formData.tipo_documento}
                   onChange={(e) =>
                     handleChange("tipo_documento", e.target.value)
@@ -455,6 +463,11 @@ export default function Clients() {
                   <option value="CE">Cédula de extranjería</option>
                   <option value="PAS">Pasaporte</option>
                 </select>
+                {errors.tipo_documento && (
+                  <p className="text-xs text-red-400 mt-1">
+                    {errors.tipo_documento}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-1">
@@ -463,11 +476,19 @@ export default function Clients() {
                 </label>
                 <input
                   type="text"
-                  className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
+                  className={`w-full p-3 bg-neutral-800 border rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60 ${
+                    errors.documento ? "border-red-500" : "border-neutral-700"
+                  }`}
                   value={formData.documento}
                   onChange={(e) => handleChange("documento", e.target.value)}
                   disabled={isViewMode}
+                  placeholder="Número de documento"
                 />
+                {errors.documento && (
+                  <p className="text-xs text-red-400 mt-1">
+                    {errors.documento}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-1">
@@ -476,11 +497,17 @@ export default function Clients() {
                 </label>
                 <input
                   type="email"
-                  className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
+                  className={`w-full p-3 bg-neutral-800 border rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60 ${
+                    errors.email ? "border-red-500" : "border-neutral-700"
+                  }`}
                   value={formData.email}
                   onChange={(e) => handleChange("email", e.target.value)}
                   disabled={isViewMode}
+                  placeholder="correo@ejemplo.com"
                 />
+                {errors.email && (
+                  <p className="text-xs text-red-400 mt-1">{errors.email}</p>
+                )}
               </div>
 
               <div className="flex flex-col gap-1">
@@ -489,11 +516,17 @@ export default function Clients() {
                 </label>
                 <input
                   type="text"
-                  className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
+                  className={`w-full p-3 bg-neutral-800 border rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60 ${
+                    errors.telefono ? "border-red-500" : "border-neutral-700"
+                  }`}
                   value={formData.telefono}
                   onChange={(e) => handleChange("telefono", e.target.value)}
                   disabled={isViewMode}
+                  placeholder="Número de teléfono"
                 />
+                {errors.telefono && (
+                  <p className="text-xs text-red-400 mt-1">{errors.telefono}</p>
+                )}
               </div>
 
               <div className="flex flex-col gap-1 md:col-span-2">
@@ -502,11 +535,19 @@ export default function Clients() {
                 </label>
                 <input
                   type="text"
-                  className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
+                  className={`w-full p-3 bg-neutral-800 border rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60 ${
+                    errors.direccion ? "border-red-500" : "border-neutral-700"
+                  }`}
                   value={formData.direccion}
                   onChange={(e) => handleChange("direccion", e.target.value)}
                   disabled={isViewMode}
+                  placeholder="Dirección completa"
                 />
+                {errors.direccion && (
+                  <p className="text-xs text-red-400 mt-1">
+                    {errors.direccion}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-1">

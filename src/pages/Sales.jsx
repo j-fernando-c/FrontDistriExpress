@@ -1,5 +1,5 @@
 // src/pages/Sales.jsx
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import {
   FiSearch,
   FiEye,
@@ -8,106 +8,94 @@ import {
   FiPlus,
   FiFileText,
   FiDollarSign,
+  FiList,
 } from "react-icons/fi";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-
-// ===== DATOS QUEMADOS PARA AUTOCOMPLETAR =====
-const CLIENTS_LIST = [
-  { nombre: "Carlos Gómez", tipoCliente: "Natural", nit: "" },
-  { nombre: "Laura Sánchez", tipoCliente: "Jurídico", nit: "900123456-1" },
-  { nombre: "Distribuidora Andina S.A.S.", tipoCliente: "Jurídico", nit: "901234567-8" },
-  { nombre: "Panadería El Trigal", tipoCliente: "Natural", nit: "" },
-  { nombre: "Supermercado La Canasta", tipoCliente: "Jurídico", nit: "800234567-2" },
-  { nombre: "Restaurante El Buen Sabor", tipoCliente: "Natural", nit: "" },
-  { nombre: "Tienda Orgánica Vida", tipoCliente: "Natural", nit: "" },
-  { nombre: "Comercializadora Central", tipoCliente: "Jurídico", nit: "830456789-0" },
-];
-
-const SELLERS_LIST = ["María Torres", "Juan Pérez", "Carlos Mendoza", "María González"];
-
-const PRODUCTS_LIST = [
-  "Arroz integral",
-  "Aceite de Oliva",
-  "Aceite de Oliva Extra Virgen",
-  "Quinua Real",
-  "Harina de Almendras",
-  "Lentejas",
-  "Avena",
-  "Panela orgánica",
-];
+import { ventasService } from "../services/ventasService";
+import { abonosService } from "../services/abonosService";
+import { clientesService } from "../services/clientesService";
+import { productosService } from "../services/productosService";
+import { domiciliariosService } from "../services/domiciliariosService";
 
 export default function Sales() {
-  const [sales, setSales] = useState([
-    {
-      id: 1,
-      cliente: "Carlos Gómez",
-      tipoCliente: "Natural",
-      nit: "",
-      fecha: "2025-02-01",
-      vendedor: "María Torres",
-      metodoPago: "Efectivo",
-      productos: [
-        { name: "Arroz integral", qty: 2, price: 12.5, subtotal: 25.0 },
-        { name: "Aceite de Oliva", qty: 1, price: 23.5, subtotal: 23.5 },
-      ],
-      descuento: 0,
-      impuestos: 0,
-      total: 48.5,
-      observaciones: "",
-      estado: "Completada",
-    },
-    {
-      id: 2,
-      cliente: "Laura Sánchez",
-      tipoCliente: "Jurídico",
-      nit: "900123456-1",
-      fecha: "2025-02-03",
-      vendedor: "Juan Pérez",
-      metodoPago: "Tarjeta",
-      productos: [{ name: "Quinua Real", qty: 1, price: 12.8, subtotal: 12.8 }],
-      descuento: 0,
-      impuestos: 0,
-      total: 12.8,
-      observaciones: "",
-      estado: "Pendiente",
-    },
-
-    // saldo negativo (deuda)
-    {
-      id: 3,
-      cliente: "Distribuidora Andina S.A.S.",
-      tipoCliente: "Jurídico",
-      nit: "901234567-8",
-      fecha: "2025-02-05",
-      vendedor: "María Torres",
-      metodoPago: "Crédito",
-      productos: [{ name: "Harina de Almendras", qty: 3, price: 22.5, subtotal: 67.5 }],
-      descuento: 0,
-      impuestos: 0,
-      total: -67.5,
-      observaciones: "Saldo pendiente por abonos.",
-      estado: "Pendiente",
-    },
-    {
-      id: 4,
-      cliente: "Panadería El Trigal",
-      tipoCliente: "Natural",
-      nit: "",
-      fecha: "2025-02-06",
-      vendedor: "Juan Pérez",
-      metodoPago: "Crédito",
-      productos: [{ name: "Aceite de Oliva", qty: 2, price: 23.5, subtotal: 47.0 }],
-      descuento: 0,
-      impuestos: 0,
-      total: -47.0,
-      observaciones: "Saldo pendiente por abonos.",
-      estado: "Pendiente",
-    },
-  ]);
-
-  // ===== TABLA DE ABONOS =====
+  // ===== DATOS =====
+  const [sales, setSales] = useState([]);
   const [abonos, setAbonos] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [domiciliarios, setDomiciliarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await Promise.all([
+        loadSales(),
+        loadAbonos(),
+        loadClients(),
+        loadProducts(),
+        loadDomiciliarios(),
+      ]);
+    } catch (err) {
+      setError(err.message || "Error al cargar datos");
+      console.error("Error cargando datos iniciales:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSales = async () => {
+    try {
+      const response = await ventasService.getAll();
+      setSales(response.data || []);
+    } catch (err) {
+      console.error("Error cargando ventas:", err);
+      throw err;
+    }
+  };
+
+  const loadAbonos = async () => {
+    try {
+      const response = await abonosService.getAll();
+      setAbonos(response.data || []);
+    } catch (err) {
+      console.error("Error cargando abonos:", err);
+    }
+  };
+
+  const loadClients = async () => {
+    try {
+      const response = await clientesService.getAll();
+      setClients(response.data || []);
+    } catch (err) {
+      console.error("Error cargando clientes:", err);
+    }
+  };
+
+  const loadProducts = async () => {
+    try {
+      const response = await productosService.getAll();
+      setProducts(response.data || []);
+    } catch (err) {
+      console.error("Error cargando productos:", err);
+    }
+  };
+
+  const loadDomiciliarios = async () => {
+    try {
+      const response = await domiciliariosService.getAll();
+      setDomiciliarios(response.data || []);
+    } catch (err) {
+      console.error("Error cargando domiciliarios:", err);
+    }
+  };
 
   const [search, setSearch] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -116,6 +104,10 @@ export default function Sales() {
 
   // modal abonos
   const [isAbonosOpen, setIsAbonosOpen] = useState(false);
+  const [selectedVentaResumen, setSelectedVentaResumen] = useState(null);
+  const [loadingResumen, setLoadingResumen] = useState(false);
+  const [selectedVentaAbonos, setSelectedVentaAbonos] = useState(null);
+  const [loadingVentaAbonos, setLoadingVentaAbonos] = useState(false);
 
   // modo abono
   const [isAbonoMode, setIsAbonoMode] = useState(false);
@@ -133,10 +125,12 @@ export default function Sales() {
 
   const [formData, setFormData] = useState({
     cliente: "",
+    cliente_id: "",
     tipoCliente: "Natural",
     nit: "",
     fecha: new Date().toISOString().slice(0, 10),
     vendedor: "",
+    vendedor_id: "",
     metodoPago: "Efectivo",
     productos: [emptyProduct()],
     descuento: 0,
@@ -154,13 +148,23 @@ export default function Sales() {
   // ===== FILTRO + PAGINACIÓN =====
   const filteredSales = sales.filter(
     (sale) =>
-      sale.cliente.toLowerCase().includes(search.toLowerCase()) ||
-      sale.vendedor.toLowerCase().includes(search.toLowerCase())
+      (sale.cliente_nombre || "")
+        .toLowerCase()
+        .includes(search.toLowerCase()) ||
+      (sale.domiciliario_nombre || "")
+        .toLowerCase()
+        .includes(search.toLowerCase()),
   );
 
-  const totalPages = Math.max(1, Math.ceil(filteredSales.length / itemsPerPage));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredSales.length / itemsPerPage),
+  );
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedSales = filteredSales.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedSales = filteredSales.slice(
+    startIndex,
+    startIndex + itemsPerPage,
+  );
 
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
@@ -196,7 +200,7 @@ export default function Sales() {
     if (isReadOnly) return;
     setFormData((prev) => {
       const productos = prev.productos.map((p, i) =>
-        i === index ? { ...p, [field]: value } : p
+        i === index ? { ...p, [field]: value } : p,
       );
       return { ...prev, productos };
     });
@@ -217,18 +221,23 @@ export default function Sales() {
   };
 
   const buildFormFromSale = (sale) => ({
-    cliente: sale.cliente,
-    tipoCliente: sale.tipoCliente || "Natural",
-    nit: sale.nit || "",
-    fecha: sale.fecha,
-    vendedor: sale.vendedor,
+    cliente: sale.cliente_nombre || "",
+    cliente_id: sale.cliente_id || "",
+    tipoCliente: sale.cliente_tipo_documento === "NIT" ? "Jurídico" : "Natural",
+    nit: sale.cliente_documento || "",
+    fecha: sale.fecha
+      ? sale.fecha.slice(0, 10)
+      : new Date().toISOString().slice(0, 10),
+    vendedor: sale.domiciliario_nombre || "",
+    vendedor_id: sale.domiciliario_id || "",
     metodoPago: sale.metodoPago || "Efectivo",
     productos:
       sale.productos && sale.productos.length
         ? sale.productos.map((p) => ({
-            name: p.name,
-            qty: String(p.qty),
-            price: String(p.price),
+            name: p.producto_nombre || p.name || "",
+            qty: String(p.cantidad || p.qty || 1),
+            price: String(p.precio_unitario || p.price || 0),
+            producto_id: p.producto_id || "",
           }))
         : [emptyProduct()],
     descuento: sale.descuento || 0,
@@ -236,16 +245,26 @@ export default function Sales() {
     observaciones: sale.observaciones || "",
   });
 
-  const openForm = (sale = null) => {
+  const openForm = async (sale = null) => {
     setIsAbonoMode(false);
     setAbonoAmount("");
     setIsReadOnly(false);
 
     if (sale) {
       setEditingId(sale.id);
-      const built = buildFormFromSale(sale);
-      setFormData(built);
-      setClienteQuery(built.cliente);
+      // Cargar detalles de la venta
+      try {
+        const detalles = await ventasService.getDetalles(sale.id);
+        const saleConDetalles = { ...sale, productos: detalles.data || [] };
+        const built = buildFormFromSale(saleConDetalles);
+        setFormData(built);
+        setClienteQuery(built.cliente);
+      } catch (err) {
+        console.error("Error cargando detalles:", err);
+        const built = buildFormFromSale(sale);
+        setFormData(built);
+        setClienteQuery(built.cliente);
+      }
     } else {
       setEditingId(null);
       const fresh = {
@@ -267,26 +286,59 @@ export default function Sales() {
     setIsFormOpen(true);
   };
 
-  const openView = (sale) => {
+  const openView = async (sale) => {
     setIsAbonoMode(false);
     setAbonoAmount("");
     setIsReadOnly(true);
     setEditingId(sale.id);
-    const built = buildFormFromSale(sale);
-    setFormData(built);
-    setClienteQuery(built.cliente);
+    // Cargar detalles de la venta
+    try {
+      const detalles = await ventasService.getDetalles(sale.id);
+      const saleConDetalles = { ...sale, productos: detalles.data || [] };
+      const built = buildFormFromSale(saleConDetalles);
+      setFormData(built);
+      setClienteQuery(built.cliente);
+    } catch (err) {
+      console.error("Error cargando detalles:", err);
+      const built = buildFormFromSale(sale);
+      setFormData(built);
+      setClienteQuery(built.cliente);
+    }
     setShowClienteSuggest(false);
     setIsFormOpen(true);
   };
 
-  const openAbonar = (sale) => {
+  const openAbonar = async (sale) => {
     setIsReadOnly(true);
     setIsAbonoMode(true);
     setAbonoAmount("");
     setEditingId(sale.id);
-    const built = buildFormFromSale(sale);
-    setFormData(built);
-    setClienteQuery(built.cliente);
+
+    // Cargar resumen de abonos de la venta
+    try {
+      setLoadingResumen(true);
+      const resumen = await abonosService.getResumen(sale.id);
+      setSelectedVentaResumen(resumen.data || null);
+    } catch (err) {
+      console.error("Error cargando resumen de abonos:", err);
+      setSelectedVentaResumen(null);
+    } finally {
+      setLoadingResumen(false);
+    }
+
+    // Cargar detalles de la venta
+    try {
+      const detalles = await ventasService.getDetalles(sale.id);
+      const saleConDetalles = { ...sale, productos: detalles.data || [] };
+      const built = buildFormFromSale(saleConDetalles);
+      setFormData(built);
+      setClienteQuery(built.cliente);
+    } catch (err) {
+      console.error("Error cargando detalles:", err);
+      const built = buildFormFromSale(sale);
+      setFormData(built);
+      setClienteQuery(built.cliente);
+    }
     setShowClienteSuggest(false);
     setIsFormOpen(true);
   };
@@ -298,6 +350,7 @@ export default function Sales() {
     setEditingId(null);
     setAbonoAmount("");
     setShowClienteSuggest(false);
+    setSelectedVentaResumen(null);
   };
 
   const validateForm = () => {
@@ -325,7 +378,7 @@ export default function Sales() {
     return true;
   };
 
-  const saveSale = () => {
+  const saveSale = async () => {
     if (!validateForm()) return;
 
     const productosLimpios = formData.productos
@@ -338,100 +391,96 @@ export default function Sales() {
         const qty = parseFloat(p.qty) || 0;
         const price = parseFloat(p.price) || 0;
         return {
-          name: p.name.trim(),
-          qty,
-          price,
-          subtotal: qty * price,
+          producto_id: p.producto_id,
+          cantidad: qty,
+          precio_unitario: price,
         };
       });
 
-    const subtotal = productosLimpios.reduce((sum, p) => sum + p.subtotal, 0);
+    const subtotal = productosLimpios.reduce(
+      (sum, p) => sum + p.cantidad * p.precio_unitario,
+      0,
+    );
     const descuento = Number(formData.descuento) || 0;
     const impuestos = Number(formData.impuestos) || 0;
     const total = Math.max(0, subtotal - descuento + impuestos);
 
-    if (editingId) {
-      setSales((prev) =>
-        prev.map((s) =>
-          s.id === editingId
-            ? {
-                ...s,
-                cliente: formData.cliente,
-                tipoCliente: formData.tipoCliente,
-                nit: formData.nit || "",
-                fecha: formData.fecha,
-                vendedor: formData.vendedor,
-                metodoPago: formData.metodoPago,
-                productos: productosLimpios,
-                descuento,
-                impuestos,
-                total,
-                observaciones: formData.observaciones,
-              }
-            : s
-        )
-      );
-    } else {
-      const newId = sales.length ? Math.max(...sales.map((s) => s.id)) + 1 : 1;
-      const nuevaVenta = {
-        id: newId,
-        cliente: formData.cliente,
-        tipoCliente: formData.tipoCliente,
-        nit: formData.nit || "",
-        fecha: formData.fecha,
-        vendedor: formData.vendedor,
-        metodoPago: formData.metodoPago,
-        productos: productosLimpios,
-        descuento,
-        impuestos,
-        total,
-        observaciones: formData.observaciones,
-        estado: "Pendiente",
-      };
-      setSales((prev) => [...prev, nuevaVenta]);
-    }
+    const data = {
+      cliente_id: formData.cliente_id,
+      domiciliario_id: formData.vendedor_id,
+      fecha: formData.fecha,
+      total_venta: total,
+      productos: productosLimpios,
+    };
 
-    closeForm();
+    try {
+      if (editingId) {
+        await ventasService.update(editingId, data);
+      } else {
+        await ventasService.create(data);
+      }
+      await loadSales();
+      closeForm();
+    } catch (err) {
+      alert(err.message || "Error al guardar venta");
+    }
   };
 
-  const deleteSale = (id) => {
+  const deleteSale = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar esta venta?")) return;
-    setSales((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await ventasService.delete(id);
+      setSales((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      alert(err.message || "Error al eliminar venta");
+    }
   };
 
   // ===== 4 ESTADOS EN TABLA (rotación al click) =====
-  const ESTADOS = ["Pendiente", "En transito", "Completada", "Anulada"];
+  const ESTADOS = ["pendiente", "en_transito", "entregada", "anulada"];
 
-  const toggleEstado = (id) => {
-    setSales((prev) =>
-      prev.map((s) => {
-        if (s.id !== id) return s;
-        const idx = ESTADOS.indexOf(s.estado);
-        const next = ESTADOS[(idx + 1) % ESTADOS.length] || "Pendiente";
-        return { ...s, estado: next };
-      })
-    );
+  const toggleEstado = async (id) => {
+    try {
+      await ventasService.toggleEstado(id);
+      setSales((prev) =>
+        prev.map((s) => {
+          if (s.id !== id) return s;
+          const idx = ESTADOS.indexOf(s.estado);
+          const next = ESTADOS[(idx + 1) % ESTADOS.length] || "pendiente";
+          return { ...s, estado: next };
+        }),
+      );
+    } catch (err) {
+      alert(err.message || "Error al cambiar estado");
+    }
   };
 
-  // estilos del botón estado (manteniendo tu patrón actual)
+  // estilos del botón estado
   const estadoButtonClasses = (estado) => {
-    if (estado === "Completada") return "bg-green-600 text-black hover:bg-green-500";
-    if (estado === "Pendiente") return "bg-yellow-500 text-black hover:bg-yellow-400";
-    if (estado === "En transito") return "bg-neutral-800 text-white hover:bg-neutral-700";
-    // Anulada
+    if (estado === "entregada")
+      return "bg-green-600 text-black hover:bg-green-500";
+    if (estado === "pendiente")
+      return "bg-yellow-500 text-black hover:bg-yellow-400";
+    if (estado === "en_transito")
+      return "bg-neutral-800 text-white hover:bg-neutral-700";
+    // anulada
     return "bg-red-600 text-black hover:bg-red-500";
   };
 
+  const formatEstado = (estado) => {
+    const estados = {
+      pendiente: "Pendiente",
+      en_transito: "En tránsito",
+      entregada: "Entregada",
+      anulada: "Anulada",
+    };
+    return estados[estado] || estado;
+  };
+
   // ===== ABONO =====
-  const registrarAbono = () => {
+  const registrarAbono = async () => {
     const sale = sales.find((s) => s.id === editingId);
     if (!sale) return;
-
-    const saldoActual = Number(sale.total) || 0;
-    if (!(saldoActual < 0)) {
-      alert("Esta venta no tiene saldo pendiente (total negativo) para abonar.");
-      return;
-    }
 
     const abonoNum = Number(abonoAmount);
     if (!abonoAmount || Number.isNaN(abonoNum) || abonoNum <= 0) {
@@ -439,44 +488,46 @@ export default function Sales() {
       return;
     }
 
-    const deuda = Math.abs(saldoActual);
-    if (abonoNum > deuda) {
-      alert("El abono no puede ser mayor al saldo pendiente.");
-      return;
+    // Validar contra el resumen si está disponible
+    if (selectedVentaResumen) {
+      const deudaPendiente = Number(selectedVentaResumen.deuda_pendiente || 0);
+      if (abonoNum > deudaPendiente) {
+        alert(
+          `El abono no puede ser mayor a la deuda pendiente ($${deudaPendiente.toFixed(2)})`,
+        );
+        return;
+      }
     }
 
-    const nuevoTotal = saldoActual + abonoNum; // -100 + 20 = -80
-    const saldoRestante = Math.max(0, Math.abs(nuevoTotal));
-    const fechaAbono = new Date().toISOString().slice(0, 10);
+    const data = {
+      venta_id: sale.id,
+      monto: abonoNum,
+      fecha_abono: new Date().toISOString().slice(0, 10),
+    };
 
-    const newAbonoId = abonos.length ? Math.max(...abonos.map((a) => a.id)) + 1 : 1;
+    try {
+      await abonosService.create(data);
+      await loadAbonos();
+      await loadSales();
+      closeForm();
+    } catch (err) {
+      alert(err.message || "Error al registrar abono");
+    }
+  };
 
-    setAbonos((prev) => [
-      ...prev,
-      {
-        id: newAbonoId,
-        saleId: sale.id,
-        cliente: sale.cliente,
-        tipoCliente: sale.tipoCliente || "",
-        nit: sale.nit || "",
-        vendedor: sale.vendedor,
-        fechaVenta: sale.fecha,
-        fechaAbono,
-        abono: abonoNum,
-        saldoRestante,
-      },
-    ]);
-
-    setSales((prev) =>
-      prev.map((s) => {
-        if (s.id !== sale.id) return s;
-        const totalActualizado = nuevoTotal >= 0 ? 0 : nuevoTotal;
-        const estadoActualizado = totalActualizado === 0 ? "Completada" : "Pendiente";
-        return { ...s, total: totalActualizado, estado: estadoActualizado };
-      })
-    );
-
-    closeForm();
+  const verAbonosDeVenta = async (ventaId) => {
+    try {
+      setLoadingVentaAbonos(true);
+      const response = await abonosService.getByVenta(ventaId);
+      setSelectedVentaAbonos(response.data || []);
+      setIsAbonosOpen(true);
+    } catch (err) {
+      console.error("Error cargando abonos de la venta:", err);
+      setSelectedVentaAbonos([]);
+      setIsAbonosOpen(true);
+    } finally {
+      setLoadingVentaAbonos(false);
+    }
   };
 
   // ===== PDF =====
@@ -488,21 +539,31 @@ export default function Sales() {
 
     doc.setFontSize(11);
     doc.text(`ID: ${sale.id}`, 14, 25);
-    doc.text(`Cliente: ${sale.cliente}`, 14, 32);
-    doc.text(`Tipo de cliente: ${sale.tipoCliente || ""}`, 14, 39);
-    if (sale.tipoCliente === "Jurídico" && sale.nit) {
-      doc.text(`NIT: ${sale.nit}`, 14, 46);
-    }
-    doc.text(`Fecha: ${sale.fecha}`, 14, 53);
-    doc.text(`Vendedor: ${sale.vendedor}`, 14, 60);
-    doc.text(`Método de pago: ${sale.metodoPago || ""}`, 14, 67);
+    doc.text(`Cliente: ${sale.cliente_nombre || ""}`, 14, 32);
+    doc.text(`Documento: ${sale.cliente_documento || ""}`, 14, 39);
+    doc.text(`Teléfono: ${sale.cliente_telefono || ""}`, 14, 46);
+    doc.text(`Dirección: ${sale.cliente_direccion || ""}`, 14, 53);
+    doc.text(
+      `Fecha: ${sale.fecha ? new Date(sale.fecha).toLocaleDateString("es-CO") : "-"}`,
+      14,
+      60,
+    );
+    doc.text(`Domiciliario: ${sale.domiciliario_nombre || ""}`, 14, 67);
 
-    const productosData = sale.productos.map((p) => [
-      p.name,
-      p.qty,
-      `$ ${p.price.toFixed(2)}`,
-      `$ ${p.subtotal.toFixed(2)}`,
-    ]);
+    const productosData =
+      sale.productos && sale.productos.length > 0
+        ? sale.productos.map((p) => {
+            const qty = p.cantidad || p.qty || 0;
+            const price = p.precio_unitario || p.price || 0;
+            const subtotal = qty * price;
+            return [
+              p.producto_nombre || p.name || "-",
+              qty,
+              `$ ${Number(price).toFixed(2)}`,
+              `$ ${subtotal.toFixed(2)}`,
+            ];
+          })
+        : [];
 
     autoTable(doc, {
       startY: 77,
@@ -512,10 +573,22 @@ export default function Sales() {
 
     const finalY = doc.lastAutoTable.finalY || 77;
 
-    doc.text(`Descuento: $ ${Number(sale.descuento || 0).toFixed(2)}`, 14, finalY + 10);
-    doc.text(`Impuestos: $ ${Number(sale.impuestos || 0).toFixed(2)}`, 14, finalY + 17);
+    doc.text(
+      `Descuento: $ ${Number(sale.descuento || 0).toFixed(2)}`,
+      14,
+      finalY + 10,
+    );
+    doc.text(
+      `Impuestos: $ ${Number(sale.impuestos || 0).toFixed(2)}`,
+      14,
+      finalY + 17,
+    );
     doc.setFontSize(13);
-    doc.text(`TOTAL: $ ${sale.total.toFixed(2)}`, 14, finalY + 28);
+    doc.text(
+      `TOTAL: $ ${Number(sale.total_venta || 0).toFixed(2)}`,
+      14,
+      finalY + 28,
+    );
 
     if (sale.observaciones) {
       doc.setFontSize(11);
@@ -527,15 +600,22 @@ export default function Sales() {
   };
 
   const abonosOrdenados = useMemo(() => {
-    return [...abonos].sort((a, b) => (a.fechaAbono > b.fechaAbono ? -1 : 1));
+    return [...abonos].sort((a, b) => {
+      const dateA = new Date(a.fecha_abono || a.fechaAbono || 0);
+      const dateB = new Date(b.fecha_abono || b.fechaAbono || 0);
+      return dateB - dateA;
+    });
   }, [abonos]);
 
   // ===== AUTOCOMPLETAR CLIENTE =====
   const clienteSuggestions = useMemo(() => {
     const q = (clienteQuery || "").toLowerCase().trim();
-    if (!q) return CLIENTS_LIST.slice(0, 8);
-    return CLIENTS_LIST.filter((c) => c.nombre.toLowerCase().includes(q)).slice(0, 8);
-  }, [clienteQuery]);
+    const filteredClients = clients.filter((c) => c.estado === "activo");
+    if (!q) return filteredClients.slice(0, 8);
+    return filteredClients
+      .filter((c) => c.nombre.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [clienteQuery, clients]);
 
   const selectClient = (c) => {
     if (isReadOnly) return;
@@ -543,8 +623,9 @@ export default function Sales() {
     setFormData((prev) => ({
       ...prev,
       cliente: c.nombre,
-      tipoCliente: c.tipoCliente,
-      nit: c.tipoCliente === "Jurídico" ? c.nit || "" : "",
+      cliente_id: c.id,
+      tipoCliente: c.tipo_documento === "NIT" ? "Jurídico" : "Natural",
+      nit: c.tipo_documento === "NIT" ? c.documento || "" : "",
     }));
     setShowClienteSuggest(false);
   };
@@ -554,13 +635,18 @@ export default function Sales() {
 
   const productSuggestionsFor = (value) => {
     const q = (value || "").toLowerCase().trim();
-    if (!q) return PRODUCTS_LIST.slice(0, 8);
-    return PRODUCTS_LIST.filter((p) => p.toLowerCase().includes(q)).slice(0, 8);
+    const activeProducts = products.filter((p) => p.estado === "activo");
+    if (!q) return activeProducts.slice(0, 8);
+    return activeProducts
+      .filter((p) => p.nombre.toLowerCase().includes(q))
+      .slice(0, 8);
   };
 
-  const selectProductForRow = (index, name) => {
+  const selectProductForRow = (index, productObj) => {
     if (isReadOnly) return;
-    updateProducto(index, "name", name);
+    updateProducto(index, "name", productObj.nombre);
+    updateProducto(index, "price", String(productObj.precio || 0));
+    updateProducto(index, "producto_id", productObj.id);
     setProductSuggestIndex(null);
   };
 
@@ -627,82 +713,131 @@ export default function Sales() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
-            {paginatedSales.map((sale) => (
-              <tr
-                key={sale.id}
-                className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-              >
-                <td className="p-3">{sale.cliente}</td>
-                <td className="p-3">{sale.fecha}</td>
-                <td className="p-3">{sale.vendedor}</td>
-                <td className="p-3">
-                  {sale.productos.map((p, i) => (
-                    <div key={i}>
-                      {p.name} x{p.qty}
-                    </div>
-                  ))}
-                </td>
-                <td className="p-3 font-semibold text-green-400">
-                  ${sale.total.toFixed(2)}
-                </td>
-                <td className="p-3">
-                  <button
-                    onClick={() => toggleEstado(sale.id)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoButtonClasses(
-                      sale.estado
-                    )}`}
-                  >
-                    {sale.estado}
-                  </button>
-                </td>
-                <td className="p-3">
-                  <div className="flex justify-center gap-3">
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openView(sale)}
-                    >
-                      <FiEye className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => generatePdf(sale)}
-                    >
-                      <FiFileText className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => openForm(sale)}
-                    >
-                      <FiEdit2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
-                      onClick={() => deleteSale(sale.id)}
-                    >
-                      <FiTrash2 className="text-lg" />
-                    </button>
-
-                    <button
-                      className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
-                      onClick={() => openAbonar(sale)}
-                      title="Realizar abono"
-                    >
-                      <FiDollarSign className="text-lg" />
-                    </button>
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-neutral-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                    Cargando ventas...
                   </div>
                 </td>
               </tr>
-            ))}
-
-            {paginatedSales.length === 0 && (
+            ) : error ? (
+              <tr>
+                <td colSpan={7} className="p-4 text-center text-red-400">
+                  {error}
+                  <button
+                    onClick={loadInitialData}
+                    className="ml-2 text-green-400 hover:underline"
+                  >
+                    Reintentar
+                  </button>
+                </td>
+              </tr>
+            ) : paginatedSales.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-4 text-center text-neutral-400">
                   No se encontraron ventas.
                 </td>
               </tr>
+            ) : (
+              paginatedSales.map((sale) => (
+                <tr
+                  key={sale.id}
+                  className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                >
+                  <td className="p-3">
+                    <div className="font-semibold">{sale.cliente_nombre}</div>
+                    <div className="text-xs text-neutral-400">
+                      {sale.cliente_telefono} · {sale.cliente_direccion}
+                    </div>
+                  </td>
+                  <td className="p-3">
+                    {sale.fecha
+                      ? new Date(sale.fecha).toLocaleDateString("es-CO")
+                      : "-"}
+                  </td>
+                  <td className="p-3">
+                    <div>{sale.domiciliario_nombre}</div>
+                    <div className="text-xs text-neutral-400">
+                      {sale.domiciliario_telefono}
+                    </div>
+                  </td>
+                  <td className="p-3">
+                    {sale.productos && sale.productos.length > 0 ? (
+                      sale.productos.map((p, i) => (
+                        <div key={i} className="text-xs">
+                          {p.producto_nombre || p.name} x{p.cantidad || p.qty}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-neutral-400">
+                        Sin detalles
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-3 font-semibold text-green-400">
+                    ${Number(sale.total_venta || 0).toFixed(2)}
+                  </td>
+                  <td className="p-3">
+                    <button
+                      onClick={() => toggleEstado(sale.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoButtonClasses(
+                        sale.estado,
+                      )}`}
+                    >
+                      {formatEstado(sale.estado)}
+                    </button>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex justify-center gap-3">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openView(sale)}
+                      >
+                        <FiEye className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => generatePdf(sale)}
+                      >
+                        <FiFileText className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => openForm(sale)}
+                      >
+                        <FiEdit2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
+                        onClick={() => deleteSale(sale.id)}
+                      >
+                        <FiTrash2 className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
+                        onClick={() => openAbonar(sale)}
+                        title="Realizar abono"
+                      >
+                        <FiDollarSign className="text-lg" />
+                      </button>
+
+                      <button
+                        className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-lg shadow"
+                        onClick={() => verAbonosDeVenta(sale.id)}
+                        title="Ver abonos de esta venta"
+                      >
+                        <FiList className="text-lg" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -715,7 +850,7 @@ export default function Sales() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredSales.length
+                  filteredSales.length,
                 )}`}{" "}
             de {filteredSales.length} ventas
           </span>
@@ -763,10 +898,10 @@ export default function Sales() {
               {isAbonoMode
                 ? "Realizar Abono"
                 : isReadOnly
-                ? "Detalle de Venta"
-                : editingId
-                ? "Editar Venta"
-                : "Registrar Nueva Venta"}
+                  ? "Detalle de Venta"
+                  : editingId
+                    ? "Editar Venta"
+                    : "Registrar Nueva Venta"}
             </h3>
 
             <form
@@ -825,15 +960,17 @@ export default function Sales() {
                           clienteSuggestions.map((c) => (
                             <button
                               type="button"
-                              key={c.nombre}
+                              key={c.id}
                               className="w-full text-left px-4 py-2 hover:bg-neutral-800 text-neutral-200"
                               onMouseDown={(ev) => ev.preventDefault()}
                               onClick={() => selectClient(c)}
                             >
                               <div className="font-semibold">{c.nombre}</div>
                               <div className="text-xs text-neutral-400">
-                                {c.tipoCliente}
-                                {c.tipoCliente === "Jurídico" && c.nit ? ` · NIT: ${c.nit}` : ""}
+                                {c.tipo_documento}
+                                {c.tipo_documento === "NIT" && c.documento
+                                  ? ` · ${c.documento}`
+                                  : ""}
                               </div>
                             </button>
                           ))
@@ -884,7 +1021,9 @@ export default function Sales() {
                     } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
                     value={formData.fecha}
                     disabled={isReadOnly}
-                    onChange={(e) => setFormData({ ...formData, fecha: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, fecha: e.target.value })
+                    }
                   />
                 </div>
 
@@ -902,7 +1041,9 @@ export default function Sales() {
                       } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
                       value={formData.nit}
                       disabled={isReadOnly}
-                      onChange={(e) => setFormData({ ...formData, nit: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, nit: e.target.value })
+                      }
                     />
                   </div>
                 )}
@@ -910,22 +1051,33 @@ export default function Sales() {
                 {/* VENDEDOR (SELECT) */}
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-neutral-300">
-                    Vendedor <span className="text-red-500">*</span>
+                    Domiciliario <span className="text-red-500">*</span>
                   </label>
                   <select
                     className={`w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none ${
                       !isReadOnly && "focus:border-green-500"
                     } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
-                    value={formData.vendedor}
+                    value={formData.vendedor_id}
                     disabled={isReadOnly}
-                    onChange={(e) => setFormData({ ...formData, vendedor: e.target.value })}
+                    onChange={(e) => {
+                      const selectedDom = domiciliarios.find(
+                        (d) => d.id === e.target.value,
+                      );
+                      setFormData({
+                        ...formData,
+                        vendedor_id: e.target.value,
+                        vendedor: selectedDom ? selectedDom.nombre : "",
+                      });
+                    }}
                   >
-                    <option value="">Seleccionar vendedor</option>
-                    {SELLERS_LIST.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
+                    <option value="">Seleccionar domiciliario</option>
+                    {domiciliarios
+                      .filter((d) => d.estado === "activo")
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.nombre}
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -940,7 +1092,9 @@ export default function Sales() {
                     } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
                     value={formData.metodoPago}
                     disabled={isReadOnly}
-                    onChange={(e) => setFormData({ ...formData, metodoPago: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, metodoPago: e.target.value })
+                    }
                   >
                     <option value="Efectivo">Efectivo</option>
                     <option value="Tarjeta">Tarjeta</option>
@@ -983,7 +1137,10 @@ export default function Sales() {
                     const suggestions = productSuggestionsFor(p.name);
 
                     return (
-                      <div key={index} className="grid grid-cols-12 gap-3 items-center">
+                      <div
+                        key={index}
+                        className="grid grid-cols-12 gap-3 items-center"
+                      >
                         {/* PRODUCTO autocomplete */}
                         <div className="col-span-5 relative">
                           <input
@@ -1002,22 +1159,33 @@ export default function Sales() {
                               if (!isReadOnly) setProductSuggestIndex(index);
                             }}
                             onBlur={() => {
-                              setTimeout(() => setProductSuggestIndex(null), 150);
+                              setTimeout(
+                                () => setProductSuggestIndex(null),
+                                150,
+                              );
                             }}
                           />
 
                           {productSuggestIndex === index && !isReadOnly && (
                             <div className="absolute z-50 mt-2 w-full bg-neutral-900 border border-neutral-700 rounded-xl shadow-lg overflow-hidden">
                               {suggestions.length ? (
-                                suggestions.map((name) => (
+                                suggestions.map((prod) => (
                                   <button
                                     type="button"
-                                    key={name}
+                                    key={prod.id}
                                     className="w-full text-left px-4 py-2 hover:bg-neutral-800 text-neutral-200"
                                     onMouseDown={(ev) => ev.preventDefault()}
-                                    onClick={() => selectProductForRow(index, name)}
+                                    onClick={() =>
+                                      selectProductForRow(index, prod)
+                                    }
                                   >
-                                    {name}
+                                    <div className="font-semibold">
+                                      {prod.nombre}
+                                    </div>
+                                    <div className="text-xs text-neutral-400">
+                                      ${Number(prod.precio || 0).toFixed(2)} ·
+                                      Stock: {prod.cantidad}
+                                    </div>
                                   </button>
                                 ))
                               ) : (
@@ -1037,7 +1205,9 @@ export default function Sales() {
                           } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
                           value={p.qty}
                           disabled={isReadOnly}
-                          onChange={(e) => updateProducto(index, "qty", e.target.value)}
+                          onChange={(e) =>
+                            updateProducto(index, "qty", e.target.value)
+                          }
                         />
                         <input
                           type="number"
@@ -1048,7 +1218,9 @@ export default function Sales() {
                           } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
                           value={p.price}
                           disabled={isReadOnly}
-                          onChange={(e) => updateProducto(index, "price", e.target.value)}
+                          onChange={(e) =>
+                            updateProducto(index, "price", e.target.value)
+                          }
                         />
                         <div className="col-span-2 text-center text-sm text-neutral-100">
                           ${subtotal.toFixed(2)}
@@ -1085,7 +1257,9 @@ export default function Sales() {
                     } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
                     value={formData.descuento}
                     disabled={isReadOnly}
-                    onChange={(e) => setFormData({ ...formData, descuento: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, descuento: e.target.value })
+                    }
                   />
                 </div>
 
@@ -1102,7 +1276,9 @@ export default function Sales() {
                     } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
                     value={formData.impuestos}
                     disabled={isReadOnly}
-                    onChange={(e) => setFormData({ ...formData, impuestos: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, impuestos: e.target.value })
+                    }
                   />
                 </div>
 
@@ -1129,42 +1305,112 @@ export default function Sales() {
                   } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
                   value={formData.observaciones}
                   disabled={isReadOnly}
-                  onChange={(e) => setFormData({ ...formData, observaciones: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, observaciones: e.target.value })
+                  }
                 />
               </div>
 
               {/* ABONO */}
               {isAbonoMode && (
                 <div className="bg-neutral-800/70 border border-neutral-700 rounded-2xl p-4">
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-sm font-medium text-neutral-300">
-                        Valor a abonar <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="w-full p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
-                        value={abonoAmount}
-                        onChange={(e) => setAbonoAmount(e.target.value)}
-                        placeholder="Ej: 20000"
-                      />
+                  {loadingResumen ? (
+                    <div className="flex items-center justify-center gap-2 p-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                      <span className="text-neutral-400">
+                        Cargando información...
+                      </span>
                     </div>
-                    <div className="flex flex-col justify-end">
-                      <div className="text-sm text-neutral-300">
-                        Saldo actual:{" "}
-                        <span className="font-semibold text-green-400">
-                          $
-                          {(() => {
-                            const s = sales.find((x) => x.id === editingId);
-                            const saldo = s ? Math.abs(Number(s.total) || 0) : 0;
-                            return saldo.toFixed(2);
-                          })()}
-                        </span>
+                  ) : selectedVentaResumen ? (
+                    <>
+                      {/* Información del resumen */}
+                      <div className="grid md:grid-cols-3 gap-4 mb-4 pb-4 border-b border-neutral-700">
+                        <div>
+                          <div className="text-xs text-neutral-400 mb-1">
+                            Total de la venta
+                          </div>
+                          <div className="text-lg font-semibold text-white">
+                            $
+                            {Number(
+                              selectedVentaResumen.total_venta || 0,
+                            ).toFixed(2)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-neutral-400 mb-1">
+                            Total abonado
+                          </div>
+                          <div className="text-lg font-semibold text-blue-400">
+                            $
+                            {Number(
+                              selectedVentaResumen.total_abonado || 0,
+                            ).toFixed(2)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-neutral-400 mb-1">
+                            Deuda pendiente
+                          </div>
+                          <div className="text-lg font-semibold text-red-400">
+                            $
+                            {Number(
+                              selectedVentaResumen.deuda_pendiente || 0,
+                            ).toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Campo de abono */}
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-sm font-medium text-neutral-300">
+                            Valor a abonar{" "}
+                            <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            max={selectedVentaResumen.deuda_pendiente}
+                            className="w-full p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
+                            value={abonoAmount}
+                            onChange={(e) => setAbonoAmount(e.target.value)}
+                            placeholder="Ej: 20000"
+                          />
+                        </div>
+                        <div className="flex flex-col justify-end">
+                          <div className="text-sm text-neutral-400">
+                            Después de este abono quedaría:{" "}
+                            <span className="font-semibold text-green-400">
+                              $
+                              {(
+                                Number(
+                                  selectedVentaResumen.deuda_pendiente || 0,
+                                ) - Number(abonoAmount || 0)
+                              ).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-sm font-medium text-neutral-300">
+                          Valor a abonar <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="w-full p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
+                          value={abonoAmount}
+                          onChange={(e) => setAbonoAmount(e.target.value)}
+                          placeholder="Ej: 20000"
+                        />
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -1195,8 +1441,8 @@ export default function Sales() {
                       {isAbonoMode
                         ? "Registrar Abono"
                         : editingId
-                        ? "Actualizar Venta"
-                        : "Registrar Venta"}
+                          ? "Actualizar Venta"
+                          : "Registrar Venta"}
                     </button>
                   </>
                 )}
@@ -1214,13 +1460,28 @@ export default function Sales() {
               <h3 className="text-xl font-semibold text-white flex items-center gap-2">
                 <FiDollarSign />
                 Abonos
+                {selectedVentaAbonos && (
+                  <span className="text-sm text-neutral-400">
+                    (Venta específica)
+                  </span>
+                )}
               </h3>
-              <button
-                onClick={() => setIsAbonosOpen(false)}
-                className="text-neutral-400 hover:text-neutral-200"
-              >
-                ✖
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedVentaAbonos && (
+                  <button
+                    onClick={() => setSelectedVentaAbonos(null)}
+                    className="px-3 py-1 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm rounded-lg transition"
+                  >
+                    Ver todos
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsAbonosOpen(false)}
+                  className="text-neutral-400 hover:text-neutral-200"
+                >
+                  ✖
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto bg-neutral-900/70 border border-neutral-700 rounded-2xl shadow-lg">
@@ -1237,37 +1498,90 @@ export default function Sales() {
                 </thead>
 
                 <tbody className="text-sm text-neutral-200">
-                  {abonosOrdenados.map((a) => (
-                    <tr
-                      key={a.id}
-                      className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-                    >
-                      <td className="p-3">
-                        <div className="font-semibold">{a.cliente}</div>
-                        <div className="text-xs text-neutral-400">
-                          {a.tipoCliente === "Jurídico" && a.nit ? `NIT: ${a.nit}` : ""}
+                  {loadingVentaAbonos ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="p-8 text-center text-neutral-400"
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
+                          Cargando abonos...
                         </div>
                       </td>
-                      <td className="p-3">{a.fechaAbono}</td>
-                      <td className="p-3">{a.vendedor}</td>
-                      <td className="p-3 font-semibold text-green-400">
-                        ${Number(a.abono || 0).toFixed(2)}
-                      </td>
-                      <td className="p-3 font-semibold text-green-400">
-                        ${Number(a.saldoRestante || 0).toFixed(2)}
-                      </td>
-                      <td className="p-3">
-                        {a.fechaVenta} (#{a.saleId})
-                      </td>
                     </tr>
-                  ))}
-
-                  {abonosOrdenados.length === 0 && (
+                  ) : (selectedVentaAbonos !== null
+                      ? selectedVentaAbonos
+                      : abonosOrdenados
+                    ).length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-4 text-center text-neutral-400">
-                        Aún no hay abonos registrados.
+                      <td
+                        colSpan={6}
+                        className="p-4 text-center text-neutral-400"
+                      >
+                        {selectedVentaAbonos !== null
+                          ? "Esta venta no tiene abonos registrados."
+                          : "Aún no hay abonos registrados."}
                       </td>
                     </tr>
+                  ) : (
+                    (selectedVentaAbonos !== null
+                      ? selectedVentaAbonos
+                      : abonosOrdenados
+                    ).map((a) => (
+                      <tr
+                        key={a.id}
+                        className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                      >
+                        <td className="p-3">
+                          <div className="font-semibold">
+                            {a.cliente_nombre || a.cliente || "-"}
+                          </div>
+                          <div className="text-xs text-neutral-400">
+                            {a.cliente_documento
+                              ? `Doc: ${a.cliente_documento}`
+                              : ""}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          {a.fecha_abono
+                            ? new Date(a.fecha_abono).toLocaleDateString(
+                                "es-CO",
+                              )
+                            : a.fechaAbono || "-"}
+                        </td>
+                        <td className="p-3">
+                          {a.vendedor_nombre || a.vendedor || "-"}
+                        </td>
+                        <td className="p-3 font-semibold text-green-400">
+                          ${Number(a.monto || a.abono || 0).toFixed(2)}
+                        </td>
+                        <td className="p-3 font-semibold">
+                          <div className="text-neutral-300">
+                            $
+                            {Number(
+                              a.saldo_restante || a.saldoRestante || 0,
+                            ).toFixed(2)}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <div className="text-xs">
+                            {a.fecha_venta
+                              ? new Date(a.fecha_venta).toLocaleDateString(
+                                  "es-CO",
+                                )
+                              : a.fechaVenta || "-"}
+                          </div>
+                          <div className="text-xs text-neutral-400">
+                            ID:{" "}
+                            {a.venta_id
+                              ? String(a.venta_id).slice(0, 8)
+                              : a.saleId || "-"}
+                            ...
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>

@@ -5,7 +5,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Products from "../pages/Products";
 import Sales from "../pages/Sales";
 import Purchases from "../pages/Purchases";
-import Credits from "../pages/Credits";
 import Zones from "../pages/Zones";
 import Rutas from "../pages/Rutas";
 import Pedidos from "../pages/Pedidos";
