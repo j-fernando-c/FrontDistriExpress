@@ -64,7 +64,7 @@ export default function AppRoutes() {
       <Route path="/dashboard" element={<Dashboard />} />
 
       {/* Redirección por defecto */}
-      <Route path="*" element={<Navigate to="/productos" replace />} />
+      <Route path="*" element={<Navigate to="/accesos" replace />} />
     </Routes>
   );
 }

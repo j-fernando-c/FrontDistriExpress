@@ -3,19 +3,6 @@ import { useState, useEffect } from "react";
 import { FiSearch, FiEye, FiEdit2, FiTrash2, FiUserPlus } from "react-icons/fi";
 import { clientesService } from "../services/clientesService";
 
-const COLOMBIA_CITIES = [
-  "Bogotá",
-  "Medellín",
-  "Cali",
-  "Barranquilla",
-  "Cartagena",
-  "Bucaramanga",
-  "Pereira",
-  "Manizales",
-  "Santa Marta",
-  "Cúcuta",
-];
-
 export default function Clients() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,41 +35,39 @@ export default function Clients() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
-  // ✅ ciudad buscador
-  const [cityQuery, setCityQuery] = useState("");
-  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
-
   const [formData, setFormData] = useState({
-    tipoCliente: "Natural", // ✅ ahora arriba
-    nombres: "",
-    apellidos: "",
+    nombre: "",
+    tipo_documento: "NIT",
+    documento: "",
     email: "",
     telefono: "",
     direccion: "",
-    ciudad: "",
-    nit: "",
-    documento: "",
+    estado: "activo",
   });
 
   // ===== FILTRO + PAGINACIÓN =====
   const filteredClients = clients.filter((c) => {
     const term = search.toLowerCase();
-    return (
-      c.nombres.toLowerCase().includes(term) ||
-      (c.apellidos || "").toLowerCase().includes(term) ||
-      c.email.toLowerCase().includes(term) ||
-      c.ciudad.toLowerCase().includes(term)
-    );
+    const fields = [
+      c.nombre,
+      c.documento,
+      c.tipo_documento,
+      c.email,
+      c.telefono,
+      c.direccion,
+      c.estado,
+    ];
+    return fields.some((field) => (field || "").toLowerCase().includes(term));
   });
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredClients.length / itemsPerPage)
+    Math.ceil(filteredClients.length / itemsPerPage),
   );
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedClients = filteredClients.slice(
     startIndex,
-    startIndex + itemsPerPage
+    startIndex + itemsPerPage,
   );
 
   const handleSearchChange = (e) => {
@@ -95,20 +80,17 @@ export default function Clients() {
     setCurrentPage(page);
   };
 
-  // ===== CITY HELPERS =====
-  const citySuggestions = (() => {
-    const q = (cityQuery || "").trim().toLowerCase();
-    if (!q) return [];
-    return COLOMBIA_CITIES.filter((c) => c.toLowerCase().includes(q)).slice(
-      0,
-      6
-    );
-  })();
-
-  const pickCity = (city) => {
-    setCityQuery(city);
-    setFormData((prev) => ({ ...prev, ciudad: city }));
-    setShowCitySuggestions(false);
+  const formatDate = (iso) => {
+    if (!iso) return "-";
+    try {
+      return new Date(iso).toLocaleDateString("es-CO", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    } catch (e) {
+      return "-";
+    }
   };
 
   // ===== FORMULARIO =====
@@ -116,77 +98,56 @@ export default function Clients() {
     if (client) {
       setEditingId(client.id);
       setFormData({
-        tipoCliente: client.tipoCliente || "Natural",
-        nombres: client.nombres,
-        apellidos: client.apellidos || "",
-        email: client.email,
-        telefono: client.telefono,
-        direccion: client.direccion,
-        ciudad: client.ciudad,
-        nit: client.nit || "",
+        nombre: client.nombre || "",
+        tipo_documento: client.tipo_documento || "NIT",
         documento: client.documento || "",
+        email: client.email || "",
+        telefono: client.telefono || "",
+        direccion: client.direccion || "",
+        estado: client.estado || "activo",
       });
-      setCityQuery(client.ciudad || "");
     } else {
       setEditingId(null);
       setFormData({
-        tipoCliente: "Natural",
-        nombres: "",
-        apellidos: "",
+        nombre: "",
+        tipo_documento: "NIT",
+        documento: "",
         email: "",
         telefono: "",
         direccion: "",
-        ciudad: "",
-        nit: "",
-        documento: "",
+        estado: "activo",
       });
-      setCityQuery("");
     }
     setIsViewMode(viewMode);
-    setShowCitySuggestions(false);
     setIsFormOpen(true);
   };
 
   const closeForm = () => {
     setIsFormOpen(false);
     setIsViewMode(false);
-    setShowCitySuggestions(false);
   };
 
   const handleChange = (field, value) => {
-    // ✅ si cambia tipoCliente: limpiar NIT/Documento según corresponda
-    if (field === "tipoCliente") {
-      setFormData((prev) => ({
-        ...prev,
-        tipoCliente: value,
-        nit: value === "Jurídico" ? prev.nit : "",
-        documento: value === "Natural" ? prev.documento : "",
-      }));
-      return;
-    }
-
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const validateForm = () => {
-    if (!formData.tipoCliente) {
-      alert("El tipo de cliente es obligatorio");
-      return false;
-    }
-
-    if (!formData.nombres.trim()) {
+    if (!formData.nombre.trim()) {
       alert("El nombre es obligatorio");
       return false;
     }
-    if (!formData.apellidos.trim()) {
-      alert("Los apellidos son obligatorios");
+    if (!formData.tipo_documento.trim()) {
+      alert("El tipo de documento es obligatorio");
+      return false;
+    }
+    if (!formData.documento.trim()) {
+      alert("El documento es obligatorio");
       return false;
     }
     if (!formData.email.trim()) {
       alert("El email es obligatorio");
       return false;
     }
-    // validación sencilla de email
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       alert("El email no tiene un formato válido");
       return false;
@@ -199,23 +160,6 @@ export default function Clients() {
       alert("La dirección es obligatoria");
       return false;
     }
-    if (!formData.ciudad.trim()) {
-      alert("La ciudad es obligatoria");
-      return false;
-    }
-
-    // ✅ Jurídico => NIT obligatorio; Natural => Documento obligatorio
-    if (formData.tipoCliente === "Jurídico") {
-      if (!formData.nit.trim()) {
-        alert("El NIT es obligatorio para clientes jurídicos");
-        return false;
-      }
-    } else {
-      if (!formData.documento.trim()) {
-        alert("El documento es obligatorio para clientes naturales");
-        return false;
-      }
-    }
 
     return true;
   };
@@ -224,15 +168,13 @@ export default function Clients() {
     if (!validateForm()) return;
 
     const data = {
-      tipoCliente: formData.tipoCliente,
-      nombres: formData.nombres,
-      apellidos: formData.apellidos,
+      nombre: formData.nombre,
+      tipo_documento: formData.tipo_documento,
+      documento: formData.documento,
       email: formData.email,
       telefono: formData.telefono,
       direccion: formData.direccion,
-      ciudad: formData.ciudad,
-      nit: formData.tipoCliente === "Jurídico" ? formData.nit : null,
-      documento: formData.tipoCliente === "Natural" ? formData.documento : null,
+      estado: formData.estado,
     };
 
     try {
@@ -267,10 +209,10 @@ export default function Clients() {
           c.id === id
             ? {
                 ...c,
-                estado: c.estado === "Activo" ? "Inactivo" : "Activo",
+                estado: c.estado === "activo" ? "inactivo" : "activo",
               }
-            : c
-        )
+            : c,
+        ),
       );
     } catch (err) {
       alert(err.message || "Error al cambiar estado");
@@ -306,7 +248,7 @@ export default function Clients() {
           <FiSearch className="text-neutral-400 mr-3 text-lg" />
           <input
             type="text"
-            placeholder="Buscar por nombre, email o ciudad..."
+            placeholder="Buscar por nombre, documento, email o teléfono..."
             className="w-full bg-transparent outline-none text-neutral-200 placeholder-neutral-500"
             value={search}
             onChange={handleSearchChange}
@@ -320,15 +262,13 @@ export default function Clients() {
           <thead className="bg-neutral-800/80 text-neutral-300 text-sm uppercase">
             <tr>
               <th className="p-3 font-semibold">Cliente</th>
-              {/* ✅ contacto separado */}
+              <th className="p-3 font-semibold">Tipo Doc</th>
+              <th className="p-3 font-semibold">Documento</th>
+              <th className="p-3 font-semibold">Teléfono</th>
               <th className="p-3 font-semibold">Correo</th>
-              <th className="p-3 font-semibold">Número</th>
-              <th className="p-3 font-semibold">Ciudad</th>
-              <th className="p-3 font-semibold">Tipo</th>
-              {/* ✅ renombrado */}
-              <th className="p-3 font-semibold">Documento/NIT</th>
-              {/* ❌ se quita Total Compras */}
+              <th className="p-3 font-semibold">Dirección</th>
               <th className="p-3 font-semibold">Estado</th>
+              <th className="p-3 font-semibold">Creado</th>
               <th className="p-3 font-semibold text-center">Acciones</th>
             </tr>
           </thead>
@@ -336,7 +276,7 @@ export default function Clients() {
           <tbody className="text-sm text-neutral-200">
             {loading ? (
               <tr>
-                <td colSpan={8} className="p-8 text-center text-neutral-400">
+                <td colSpan={9} className="p-8 text-center text-neutral-400">
                   <div className="flex items-center justify-center gap-2">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
                     Cargando clientes...
@@ -345,7 +285,7 @@ export default function Clients() {
               </tr>
             ) : error ? (
               <tr>
-                <td colSpan={8} className="p-4 text-center text-red-400">
+                <td colSpan={9} className="p-4 text-center text-red-400">
                   {error}
                   <button
                     onClick={loadClients}
@@ -357,7 +297,7 @@ export default function Clients() {
               </tr>
             ) : paginatedClients.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-4 text-center text-neutral-400">
+                <td colSpan={9} className="p-4 text-center text-neutral-400">
                   No se encontraron clientes.
                 </td>
               </tr>
@@ -368,37 +308,29 @@ export default function Clients() {
                   className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
                 >
                   <td className="p-3">
-                    <div className="font-semibold">
-                      {client.nombres} {client.apellidos}
-                    </div>
+                    <div className="font-semibold">{client.nombre}</div>
                   </td>
-
-                  {/* ✅ correo / número */}
-                  <td className="p-3">{client.email}</td>
+                  <td className="p-3">{client.tipo_documento}</td>
+                  <td className="p-3">{client.documento}</td>
                   <td className="p-3">{client.telefono}</td>
-
-                  <td className="p-3">{client.ciudad}</td>
-                  <td className="p-3">{client.tipoCliente}</td>
-
-                  {/* ✅ documento/nit */}
-                  <td className="p-3">
-                    {client.tipoCliente === "Jurídico"
-                      ? client.nit || "-"
-                      : client.documento || "-"}
-                  </td>
+                  <td className="p-3">{client.email}</td>
+                  <td className="p-3">{client.direccion}</td>
 
                   <td className="p-3">
                     <button
                       onClick={() => toggleEstado(client.id)}
                       className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${
-                        client.estado === "Activo"
+                        (client.estado || "").toLowerCase() === "activo"
                           ? "bg-green-600 text-black hover:bg-green-500"
                           : "bg-red-600 text-black hover:bg-red-500"
                       }`}
                     >
-                      {client.estado}
+                      {(client.estado || "-").charAt(0).toUpperCase() +
+                        (client.estado || "-").slice(1)}
                     </button>
                   </td>
+
+                  <td className="p-3">{formatDate(client.fecha_creacion)}</td>
 
                   <td className="p-3">
                     <div className="flex justify-center gap-3">
@@ -441,7 +373,7 @@ export default function Clients() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredClients.length
+                  filteredClients.length,
                 )}`}{" "}
             de {filteredClients.length} clientes
           </span>
@@ -488,88 +420,56 @@ export default function Clients() {
               {isViewMode
                 ? "Ver Cliente"
                 : editingId
-                ? "Editar Cliente"
-                : "Registrar Nuevo Cliente"}
+                  ? "Editar Cliente"
+                  : "Registrar Nuevo Cliente"}
             </h3>
 
-            {/* ✅ Tipo de cliente arriba */}
             <div className="grid md:grid-cols-2 gap-4 mb-4">
               <div className="flex flex-col gap-1 md:col-span-2">
-                <label className="text-sm font-medium text-neutral-300">
-                  Tipo de Cliente <span className="text-red-500">*</span>
-                </label>
-                <select
-                  className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
-                  value={formData.tipoCliente}
-                  onChange={(e) => handleChange("tipoCliente", e.target.value)}
-                  disabled={isViewMode}
-                >
-                  <option value="Natural">Natural</option>
-                  <option value="Jurídico">Jurídico</option>
-                </select>
-              </div>
-
-              {/* Documento o NIT según tipo */}
-              {formData.tipoCliente === "Jurídico" ? (
-                <div className="flex flex-col gap-1 md:col-span-2">
-                  <label className="text-sm font-medium text-neutral-300">
-                    NIT <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
-                    value={formData.nit}
-                    onChange={(e) => handleChange("nit", e.target.value)}
-                    disabled={isViewMode}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col gap-1 md:col-span-2">
-                  <label className="text-sm font-medium text-neutral-300">
-                    Documento <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
-                    value={formData.documento}
-                    onChange={(e) => handleChange("documento", e.target.value)}
-                    disabled={isViewMode}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
-              {/* Nombres */}
-              <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-neutral-300">
                   Nombre <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
-                  value={formData.nombres}
-                  onChange={(e) => handleChange("nombres", e.target.value)}
+                  value={formData.nombre}
+                  onChange={(e) => handleChange("nombre", e.target.value)}
                   disabled={isViewMode}
                 />
               </div>
 
-              {/* Apellidos */}
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-neutral-300">
-                  Apellidos o razon social
-                  <span className="text-red-500">*</span>
+                  Tipo de documento <span className="text-red-500">*</span>
+                </label>
+                <select
+                  className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
+                  value={formData.tipo_documento}
+                  onChange={(e) =>
+                    handleChange("tipo_documento", e.target.value)
+                  }
+                  disabled={isViewMode}
+                >
+                  <option value="NIT">NIT</option>
+                  <option value="CC">Cédula de ciudadanía</option>
+                  <option value="CE">Cédula de extranjería</option>
+                  <option value="PAS">Pasaporte</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-neutral-300">
+                  Documento <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
-                  value={formData.apellidos}
-                  onChange={(e) => handleChange("apellidos", e.target.value)}
+                  value={formData.documento}
+                  onChange={(e) => handleChange("documento", e.target.value)}
                   disabled={isViewMode}
                 />
               </div>
 
-              {/* Email */}
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-neutral-300">
                   Email <span className="text-red-500">*</span>
@@ -583,7 +483,6 @@ export default function Clients() {
                 />
               </div>
 
-              {/* Teléfono */}
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-neutral-300">
                   Teléfono <span className="text-red-500">*</span>
@@ -597,7 +496,6 @@ export default function Clients() {
                 />
               </div>
 
-              {/* Dirección */}
               <div className="flex flex-col gap-1 md:col-span-2">
                 <label className="text-sm font-medium text-neutral-300">
                   Dirección <span className="text-red-500">*</span>
@@ -611,46 +509,19 @@ export default function Clients() {
                 />
               </div>
 
-              {/* ✅ Ciudad buscador */}
-              <div className="flex flex-col gap-1 md:col-span-2 relative">
+              <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-neutral-300">
-                  Ciudad <span className="text-red-500">*</span>
+                  Estado
                 </label>
-                <input
-                  type="text"
+                <select
                   className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500 disabled:opacity-60"
-                  value={isViewMode ? formData.ciudad : cityQuery}
-                  onFocus={() => !isViewMode && setShowCitySuggestions(true)}
-                  onBlur={() =>
-                    setTimeout(() => setShowCitySuggestions(false), 120)
-                  }
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setCityQuery(v);
-                    handleChange("ciudad", v);
-                    setShowCitySuggestions(true);
-                  }}
+                  value={formData.estado}
+                  onChange={(e) => handleChange("estado", e.target.value)}
                   disabled={isViewMode}
-                />
-
-                {!isViewMode &&
-                  showCitySuggestions &&
-                  citySuggestions.length > 0 &&
-                  cityQuery.trim() && (
-                    <div className="absolute z-50 mt-2 w-full bg-neutral-900 border border-neutral-700 rounded-xl shadow-xl overflow-hidden">
-                      {citySuggestions.map((city) => (
-                        <button
-                          key={city}
-                          type="button"
-                          className="w-full text-left px-4 py-3 hover:bg-neutral-800/70 transition"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => pickCity(city)}
-                        >
-                          <div className="text-neutral-100">{city}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                >
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                </select>
               </div>
             </div>
 

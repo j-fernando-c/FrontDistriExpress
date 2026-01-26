@@ -1,8 +1,10 @@
 // src/pages/Access.jsx
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { FiLock, FiMail, FiKey, FiLogOut } from "react-icons/fi";
 
 export default function Access() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
@@ -12,8 +14,7 @@ export default function Access() {
   const [recoverEmail, setRecoverEmail] = useState("");
   const [recoverMsg, setRecoverMsg] = useState("");
 
-  const validateEmail = (value) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -36,6 +37,7 @@ export default function Access() {
     // Como no hay BD, cualquier correo/contraseña válidos "inician sesión"
     setLoggedIn(true);
     setRecoverMsg("");
+    navigate("/productos");
   };
 
   const handleLogout = () => {
@@ -58,7 +60,7 @@ export default function Access() {
 
     // Simulación de envío
     setRecoverMsg(
-      "Si el correo existe en el sistema, recibirás un enlace para restablecer tu contraseña."
+      "Si el correo existe en el sistema, recibirás un enlace para restablecer tu contraseña.",
     );
   };
 
@@ -69,9 +71,7 @@ export default function Access() {
           <div className="w-14 h-14 rounded-2xl bg-yellow-500/10 flex items-center justify-center mb-3">
             <FiLock className="text-yellow-400 text-2xl" />
           </div>
-          <h1 className="text-xl font-semibold text-white">
-            Iniciar Sesión
-          </h1>
+          <h1 className="text-xl font-semibold text-white">Iniciar Sesión</h1>
           <p className="text-xs text-neutral-400 mt-1 text-center">
             Accede al sistema de gestión
           </p>
@@ -113,9 +113,7 @@ export default function Access() {
                   />
                 </div>
                 {errors.email && (
-                  <span className="text-xs text-red-400">
-                    {errors.email}
-                  </span>
+                  <span className="text-xs text-red-400">{errors.email}</span>
                 )}
               </div>
 
@@ -174,9 +172,7 @@ export default function Access() {
                   onChange={(e) => setRecoverEmail(e.target.value)}
                 />
                 {recoverMsg && (
-                  <p className="text-[11px] text-neutral-300">
-                    {recoverMsg}
-                  </p>
+                  <p className="text-[11px] text-neutral-300">{recoverMsg}</p>
                 )}
                 <button
                   type="submit"

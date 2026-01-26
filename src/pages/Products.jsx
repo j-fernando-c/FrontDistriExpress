@@ -2,6 +2,7 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { FiSearch, FiPlus, FiEye, FiEdit2, FiTrash2 } from "react-icons/fi";
 import { productosService } from "../services/productosService";
+import { categoriasService } from "../services/categoriasService";
 
 export default function Products() {
   // ====== Listas (quemadas por ahora) ======
@@ -14,30 +15,18 @@ export default function Products() {
       "Miligramos",
       "Kilos",
     ],
-    []
-  );
-
-  const CATEGORIES = useMemo(
-    () => [
-      "Granos y Cereales",
-      "Aceites y Vinagres",
-      "Condimentos",
-      "Harinas",
-      "Legumbres",
-      "Bebidas",
-      "Frutas Secas",
-      "Otros",
-    ],
-    []
+    [],
   );
 
   // ====== Data ======
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     loadProducts();
+    loadCategories();
   }, []);
 
   const loadProducts = async () => {
@@ -51,6 +40,15 @@ export default function Products() {
       console.error("Error cargando productos:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const response = await categoriasService.getAll();
+      setCategories(response.data || []);
+    } catch (err) {
+      console.error("Error cargando categorías:", err);
     }
   };
 
@@ -80,20 +78,20 @@ export default function Products() {
   const filteredProducts = products.filter((p) => {
     const q = search.toLowerCase();
     return (
-      p.name.toLowerCase().includes(q) ||
-      (p.category || "").toLowerCase().includes(q) ||
-      (p.unit || "").toLowerCase().includes(q)
+      p.nombre.toLowerCase().includes(q) ||
+      (p.categoria_nombre || "").toLowerCase().includes(q) ||
+      (p.precio || "").toLowerCase().includes(q)
     );
   });
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredProducts.length / itemsPerPage)
+    Math.ceil(filteredProducts.length / itemsPerPage),
   );
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedProducts = filteredProducts.slice(
     startIndex,
-    startIndex + itemsPerPage
+    startIndex + itemsPerPage,
   );
 
   const handleSearchChange = (e) => {
@@ -119,11 +117,10 @@ export default function Products() {
     setIsViewMode(false);
     setEditingId(product.id);
     setFormData({
-      name: product.name || "",
-      category: product.category || "",
-      unit: product.unit || "Sin medida",
-      qty: String(product.qty ?? "1"),
-      price: String(product.price ?? "0"),
+      name: product.nombre || "",
+      category: product.categoria_nombre || "",
+      qty: String(product.cantidad ?? "1"),
+      price: String(product.precio ?? "0"),
     });
     setErrors({});
     setIsModalOpen(true);
@@ -133,11 +130,10 @@ export default function Products() {
     setIsViewMode(true);
     setEditingId(product.id);
     setFormData({
-      name: product.name || "",
-      category: product.category || "",
-      unit: product.unit || "Sin medida",
-      qty: String(product.qty ?? "1"),
-      price: String(product.price ?? "0"),
+      name: product.nombre || "",
+      category: product.categoria_nombre || "",
+      qty: String(product.cantidad ?? "1"),
+      price: String(product.precio ?? "0"),
     });
     setErrors({});
     setIsModalOpen(true);
@@ -187,8 +183,6 @@ export default function Products() {
         newErrors.price = "El precio debe ser 0 o mayor";
     }
 
-    if (!formData.unit) newErrors.unit = "La unidad es obligatoria";
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -204,11 +198,10 @@ export default function Products() {
     if (!validate()) return;
 
     const data = {
-      name: formData.name.trim(),
-      category: formData.category.trim(),
-      unit: formData.unit,
-      qty: toNumberSafe(formData.qty),
-      price: toNumberSafe(formData.price),
+      nombre: formData.nombre.trim(),
+      categoria_nombre: formData.category.trim(),
+      cantidad: toNumberSafe(formData.qty),
+      precio: toNumberSafe(formData.price),
     };
 
     try {
@@ -242,8 +235,8 @@ export default function Products() {
         prev.map((p) =>
           p.id === id
             ? { ...p, estado: p.estado === "Activo" ? "Inactivo" : "Activo" }
-            : p
-        )
+            : p,
+        ),
       );
     } catch (err) {
       alert(err.message || "Error al cambiar estado");
@@ -304,7 +297,6 @@ export default function Products() {
             <tr>
               <th className="p-3 font-semibold">Producto</th>
               <th className="p-3 font-semibold">Categoría</th>
-              <th className="p-3 font-semibold">Unidad</th>
               <th className="p-3 font-semibold">Cantidad</th>
               <th className="p-3 font-semibold">Precio Unidad</th>
               <th className="p-3 font-semibold">Estado</th>
@@ -346,12 +338,11 @@ export default function Products() {
                   key={p.id}
                   className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
                 >
-                  <td className="p-3 font-medium text-white">{p.name}</td>
-                  <td className="p-3 text-neutral-300">{p.category}</td>
-                  <td className="p-3 text-neutral-300">{p.unit}</td>
-                  <td className="p-3 text-neutral-300">{p.qty}</td>
+                  <td className="p-3 font-medium text-white">{p.nombre}</td>
+                  <td className="p-3 text-neutral-300">{p.categoria_nombre}</td>
+                  <td className="p-3 text-neutral-300">{p.cantidad}</td>
                   <td className="p-3 text-green-400 font-semibold">
-                    {money(p.price)}
+                    {money(p.precio)}
                   </td>
 
                   <td className="p-3">
@@ -406,7 +397,7 @@ export default function Products() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredProducts.length
+                  filteredProducts.length,
                 )}`}{" "}
             de {filteredProducts.length} productos
           </span>
@@ -454,8 +445,8 @@ export default function Products() {
                 {isViewMode
                   ? "Ver Producto"
                   : editingId
-                  ? "Editar Producto"
-                  : "Registrar Nuevo Producto"}
+                    ? "Editar Producto"
+                    : "Registrar Nuevo Producto"}
               </h3>
               <button
                 onClick={closeModal}
@@ -529,11 +520,13 @@ export default function Products() {
                     disabled={isViewMode}
                   >
                     <option value="">Seleccionar categoría...</option>
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
+                    {categories
+                      .filter((cat) => cat.estado === "activo")
+                      .map((cat) => (
+                        <option key={cat.id} value={cat.nombre_categoria}>
+                          {cat.nombre_categoria}
+                        </option>
+                      ))}
                   </select>
                   {errors.category && (
                     <p className="text-xs text-red-400 mt-1">
