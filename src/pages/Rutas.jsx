@@ -1,5 +1,5 @@
 // src/pages/Rutas.jsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FiSearch,
   FiEye,
@@ -10,60 +10,64 @@ import {
   FiArrowDown,
   FiMapPin,
 } from "react-icons/fi";
+import { rutasService } from "../services/rutasService";
 
 const emptyStop = () => ({ nombre: "", direccion: "" });
 
 export default function Rutas() {
-  const [routes, setRoutes] = useState([
-    {
-      id: 1,
-      nombre: "Ruta Norte Mañana",
-      zona: "Zona Norte",
-      tiempoMin: 180,
-      distanciaKm: 12.5,
-      descripcion: "Ruta matutina por barrios residenciales del norte.",
-      domiciliario: "Luis Rodríguez",
-      vehiculo: "Motocicleta Honda CB 125",
-      horaInicio: "08:00",
-      horaFin: "12:00",
-      observaciones: "Priorizar entregas de productos frescos.",
-      estado: "Activa",
-      paradas: [
-        {
-          nombre: "Supermercado Norte Plaza",
-          direccion: "Calle 12 #15-30, Zona Norte",
-        },
-        {
-          nombre: "Tienda Las Colinas",
-          direccion: "Carrera 8 #20-15, Zona Norte",
-        },
-      ],
-    },
-    {
-      id: 2,
-      nombre: "Ruta Sur Express",
-      zona: "Zona Sur",
-      tiempoMin: 240,
-      distanciaKm: 18.3,
-      descripcion: "Cobertura rápida en zona sur.",
-      domiciliario: "Carlos Méndez",
-      vehiculo: "Motocicleta Yamaha FZ 150",
-      horaInicio: "14:00",
-      horaFin: "18:00",
-      observaciones: "",
-      estado: "Inactiva",
-      paradas: [
-        {
-          nombre: "Tienda El Progreso",
-          direccion: "Calle 30 #5-22, Zona Sur",
-        },
-        {
-          nombre: "MiniMarket Sur",
-          direccion: "Carrera 20 #45-10, Zona Sur",
-        },
-      ],
-    },
-  ]);
+  const [routes, setRoutes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchRoutes();
+  }, []);
+
+  const mapBackendToFrontend = (r) => ({
+    id: r.id,
+    nombre: r.nombre_ruta ?? r.nombre ?? "",
+    zona: r.destino ?? r.zona ?? "",
+    tiempoMin: r.tiempo_min ?? r.tiempoMin ?? 0,
+    distanciaKm: r.distancia_km ?? r.distanciaKm ?? 0,
+    descripcion: r.origen ? `Origen: ${r.origen}` : (r.descripcion ?? ""),
+    domiciliario: r.domiciliario ?? "",
+    vehiculo: r.vehiculo ?? "",
+    horaInicio: r.hora_inicio ?? r.horaInicio ?? "",
+    horaFin: r.hora_fin ?? r.horaFin ?? "",
+    observaciones: r.observaciones ?? "",
+    estado: r.estado
+      ? String(r.estado).charAt(0).toUpperCase() + String(r.estado).slice(1)
+      : "Activa",
+    paradas: r.paradas ?? [],
+    // raw fields
+    rutaId: r.id,
+    clienteId: r.cliente_id ?? null,
+    fechaCreacion: r.fecha_creacion ?? null,
+    fechaCreacionStr: r.fecha_creacion
+      ? String(r.fecha_creacion).split("T")[0]
+      : "",
+    origen: r.origen ?? null,
+    destino: r.destino ?? null,
+    clienteNombre: r.cliente_nombre ?? null,
+    clienteTelefono: r.cliente_telefono ?? null,
+  });
+
+  const fetchRoutes = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await rutasService.getAll();
+      const list = res?.data ?? res ?? [];
+      const mapped = Array.isArray(list) ? list.map(mapBackendToFrontend) : [];
+      setRoutes(mapped);
+    } catch (err) {
+      console.error(err);
+      setError("Error cargando rutas");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
 
@@ -77,6 +81,7 @@ export default function Rutas() {
     tiempoEstimado: "",
     distancia: "",
     descripcion: "",
+    origen: "",
     domiciliario: "",
     vehiculo: "",
     horaInicio: "",
@@ -100,12 +105,12 @@ export default function Rutas() {
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredRoutes.length / itemsPerPage)
+    Math.ceil(filteredRoutes.length / itemsPerPage),
   );
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRoutes = filteredRoutes.slice(
     startIndex,
-    startIndex + itemsPerPage
+    startIndex + itemsPerPage,
   );
 
   const handleSearchChange = (e) => {
@@ -125,6 +130,7 @@ export default function Rutas() {
     tiempoEstimado: route.tiempoMin.toString(),
     distancia: route.distanciaKm.toString(),
     descripcion: route.descripcion,
+    origen: route.origen || "",
     domiciliario: route.domiciliario || "",
     vehiculo: route.vehiculo || "",
     horaInicio: route.horaInicio || "",
@@ -207,7 +213,7 @@ export default function Rutas() {
     }
 
     const paradasValidas = formData.paradas.filter(
-      (p) => p.nombre.trim() && p.direccion.trim()
+      (p) => p.nombre.trim() && p.direccion.trim(),
     );
     if (paradasValidas.length === 0) {
       alert("Debe registrar al menos una tienda en el orden de visita");
@@ -230,70 +236,72 @@ export default function Rutas() {
         direccion: p.direccion.trim(),
       }));
 
-    if (editingId) {
-      setRoutes((prev) =>
-        prev.map((r) =>
-          r.id === editingId
-            ? {
-                ...r,
-                nombre: formData.nombreRuta,
-                zona: formData.zona,
-                tiempoMin,
-                distanciaKm,
-                descripcion: formData.descripcion,
-                domiciliario: formData.domiciliario,
-                vehiculo: formData.vehiculo,
-                horaInicio: formData.horaInicio,
-                horaFin: formData.horaFin,
-                observaciones: formData.observaciones,
-                paradas: paradasValidas,
-              }
-            : r
-        )
-      );
-    } else {
-      const newId = routes.length
-        ? Math.max(...routes.map((r) => r.id)) + 1
-        : 1;
+    const payload = {
+      nombre_ruta: formData.nombreRuta,
+      origen: formData.origen || undefined,
+      destino: formData.zona || undefined,
+      tiempo_min: tiempoMin,
+      distancia_km: distanciaKm,
+      descripcion: formData.descripcion,
+      domiciliario: formData.domiciliario || undefined,
+      vehiculo: formData.vehiculo || undefined,
+      hora_inicio: formData.horaInicio || undefined,
+      hora_fin: formData.horaFin || undefined,
+      observaciones: formData.observaciones || "",
+      paradas: paradasValidas,
+      estado: formData.estado
+        ? String(formData.estado).toLowerCase()
+        : "activa",
+    };
 
-      const nuevaRuta = {
-        id: newId,
-        nombre: formData.nombreRuta,
-        zona: formData.zona,
-        tiempoMin,
-        distanciaKm,
-        descripcion: formData.descripcion,
-        domiciliario: formData.domiciliario,
-        vehiculo: formData.vehiculo,
-        horaInicio: formData.horaInicio,
-        horaFin: formData.horaFin,
-        observaciones: formData.observaciones,
-        estado: "Activa",
-        paradas: paradasValidas,
-      };
-
-      setRoutes((prev) => [...prev, nuevaRuta]);
-    }
-
-    closeForm();
+    (async () => {
+      setSaving(true);
+      try {
+        if (editingId) {
+          await rutasService.update(editingId, payload);
+        } else {
+          await rutasService.create(payload);
+        }
+        await fetchRoutes();
+        closeForm();
+      } catch (err) {
+        console.error(err);
+        alert("Error guardando ruta");
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
 
-  const deleteRoute = (id) => {
+  const deleteRoute = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar esta ruta?")) return;
-    setRoutes((prev) => prev.filter((r) => r.id !== id));
+    setSaving(true);
+    try {
+      await rutasService.delete(id);
+      await fetchRoutes();
+    } catch (err) {
+      console.error(err);
+      alert("Error eliminando ruta");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleEstado = (id) => {
-    setRoutes((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              estado: r.estado === "Activa" ? "Inactiva" : "Activa",
-            }
-          : r
-      )
-    );
+    (async () => {
+      setSaving(true);
+      try {
+        const r = routes.find((x) => x.id === id);
+        const next = r && r.estado === "Activa" ? "inactiva" : "activa";
+        await rutasService.toggleEstado(id, next);
+        await fetchRoutes();
+      } catch (err) {
+        console.error(err);
+        alert("Error cambiando estado");
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
 
   const estadoClasses = (estado) =>
@@ -320,7 +328,7 @@ export default function Rutas() {
     setFormData((prev) => ({
       ...prev,
       paradas: prev.paradas.map((p, i) =>
-        i === index ? { ...p, [field]: value } : p
+        i === index ? { ...p, [field]: value } : p,
       ),
     }));
   };
@@ -380,9 +388,10 @@ export default function Rutas() {
           <thead className="bg-neutral-800/80 text-neutral-300 text-sm uppercase">
             <tr>
               <th className="p-3 font-semibold">Ruta</th>
-              <th className="p-3 font-semibold">Zona</th>
-              <th className="p-3 font-semibold">Domiciliario</th>
-              <th className="p-3 font-semibold">Tiendas</th>
+              <th className="p-3 font-semibold">Origen</th>
+              <th className="p-3 font-semibold">Destino</th>
+              <th className="p-3 font-semibold">Cliente</th>
+              <th className="p-3 font-semibold">Fecha</th>
               <th className="p-3 font-semibold">Estado</th>
               <th className="p-3 font-semibold text-center">Acciones</th>
             </tr>
@@ -390,7 +399,6 @@ export default function Rutas() {
 
           <tbody className="text-sm text-neutral-200">
             {paginatedRoutes.map((r) => {
-              const tiendasCount = r.paradas ? r.paradas.length : 0;
               return (
                 <tr
                   key={r.id}
@@ -402,24 +410,20 @@ export default function Rutas() {
                       {r.tiempoMin} min · {r.distanciaKm.toFixed(1)} km
                     </div>
                   </td>
-                  <td className="p-3">{r.zona}</td>
+                  <td className="p-3">{r.origen || "—"}</td>
+                  <td className="p-3">{r.zona || "—"}</td>
                   <td className="p-3">
-                    <div>{r.domiciliario || "—"}</div>
-                    {r.vehiculo && (
-                      <div className="text-xs text-neutral-400">
-                        {r.vehiculo}
-                      </div>
-                    )}
+                    <div className="font-medium">{r.clienteNombre || "—"}</div>
+                    <div className="text-xs text-neutral-400">
+                      {r.clienteTelefono || ""}
+                    </div>
                   </td>
-                  <td className="p-3">
-                    {tiendasCount}{" "}
-                    {tiendasCount === 1 ? "tienda" : "tiendas"}
-                  </td>
+                  <td className="p-3">{r.fechaCreacionStr || "—"}</td>
                   <td className="p-3">
                     <button
                       onClick={() => toggleEstado(r.id)}
                       className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
-                        r.estado
+                        r.estado,
                       )}`}
                     >
                       {r.estado}
@@ -427,7 +431,6 @@ export default function Rutas() {
                   </td>
                   <td className="p-3">
                     <div className="flex justify-center gap-3">
-                      {/* VER (solo lectura) */}
                       <button
                         className="bg-neutral-800 hover:bg-neutral-700 p-2 rounded-lg shadow text-white"
                         onClick={() => openView(r)}
@@ -435,7 +438,6 @@ export default function Rutas() {
                         <FiEye className="text-lg" />
                       </button>
 
-                      {/* EDITAR */}
                       <button
                         className="bg-green-600 hover:bg-green-500 text-black p-2 rounded-lg shadow"
                         onClick={() => openForm(r)}
@@ -443,7 +445,6 @@ export default function Rutas() {
                         <FiEdit2 className="text-lg" />
                       </button>
 
-                      {/* ELIMINAR */}
                       <button
                         className="bg-red-600 hover:bg-red-500 text-black p-2 rounded-lg shadow"
                         onClick={() => deleteRoute(r.id)}
@@ -458,7 +459,7 @@ export default function Rutas() {
 
             {paginatedRoutes.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-4 text-center text-neutral-400">
+                <td colSpan={7} className="p-4 text-center text-neutral-400">
                   No se encontraron rutas.
                 </td>
               </tr>
@@ -474,7 +475,7 @@ export default function Rutas() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredRoutes.length
+                  filteredRoutes.length,
                 )}`}{" "}
             de {filteredRoutes.length} rutas
           </span>
@@ -488,21 +489,19 @@ export default function Rutas() {
               Anterior
             </button>
 
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-              (page) => (
-                <button
-                  key={page}
-                  onClick={() => goToPage(page)}
-                  className={`px-3 py-1 rounded-lg border border-neutral-700 ${
-                    page === currentPage
-                      ? "bg-green-600 text-black"
-                      : "bg-neutral-800 hover:bg-neutral-700"
-                  }`}
-                >
-                  {page}
-                </button>
-              )
-            )}
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => goToPage(page)}
+                className={`px-3 py-1 rounded-lg border border-neutral-700 ${
+                  page === currentPage
+                    ? "bg-green-600 text-black"
+                    : "bg-neutral-800 hover:bg-neutral-700"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
 
             <button
               onClick={() => goToPage(currentPage + 1)}
@@ -523,8 +522,8 @@ export default function Rutas() {
               {isReadOnly
                 ? "Detalle de Ruta"
                 : editingId
-                ? "Editar Ruta"
-                : "Registrar Nueva Ruta"}
+                  ? "Editar Ruta"
+                  : "Registrar Nueva Ruta"}
             </h3>
 
             <form
@@ -548,8 +547,7 @@ export default function Rutas() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-neutral-300">
-                      Nombre de la Ruta{" "}
-                      <span className="text-red-500">*</span>
+                      Nombre de la Ruta <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -572,8 +570,7 @@ export default function Rutas() {
 
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-neutral-300">
-                      Zona Asignada{" "}
-                      <span className="text-red-500">*</span>
+                      Zona Asignada <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -832,11 +829,7 @@ export default function Rutas() {
                               value={p.nombre}
                               disabled={isReadOnly}
                               onChange={(e) =>
-                                updateParada(
-                                  index,
-                                  "nombre",
-                                  e.target.value
-                                )
+                                updateParada(index, "nombre", e.target.value)
                               }
                             />
                           </div>
@@ -855,11 +848,7 @@ export default function Rutas() {
                               value={p.direccion}
                               disabled={isReadOnly}
                               onChange={(e) =>
-                                updateParada(
-                                  index,
-                                  "direccion",
-                                  e.target.value
-                                )
+                                updateParada(index, "direccion", e.target.value)
                               }
                             />
                           </div>

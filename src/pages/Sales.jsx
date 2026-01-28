@@ -220,30 +220,40 @@ export default function Sales() {
     return Math.max(0, sub - desc + imp);
   };
 
-  const buildFormFromSale = (sale) => ({
-    cliente: sale.cliente_nombre || "",
-    cliente_id: sale.cliente_id || "",
-    tipoCliente: sale.cliente_tipo_documento === "NIT" ? "Jurídico" : "Natural",
-    nit: sale.cliente_documento || "",
-    fecha: sale.fecha
-      ? sale.fecha.slice(0, 10)
-      : new Date().toISOString().slice(0, 10),
-    vendedor: sale.domiciliario_nombre || "",
-    vendedor_id: sale.domiciliario_id || "",
-    metodoPago: sale.metodoPago || "Efectivo",
-    productos:
-      sale.productos && sale.productos.length
-        ? sale.productos.map((p) => ({
-            name: p.producto_nombre || p.name || "",
-            qty: String(p.cantidad || p.qty || 1),
-            price: String(p.precio_unitario || p.price || 0),
-            producto_id: p.producto_id || "",
-          }))
-        : [emptyProduct()],
-    descuento: sale.descuento || 0,
-    impuestos: sale.impuestos || 0,
-    observaciones: sale.observaciones || "",
-  });
+  const buildFormFromSale = (sale) => {
+    const productosOrigen =
+      (sale.productos && sale.productos.length ? sale.productos : null) ||
+      sale.detalle_ventas ||
+      [];
+
+    return {
+      cliente: sale.cliente_nombre || "",
+      cliente_id: sale.cliente_id || "",
+      tipoCliente:
+        sale.cliente_tipo_documento === "NIT" ? "Jurídico" : "Natural",
+      nit: sale.cliente_documento || "",
+      fecha: sale.fecha
+        ? sale.fecha.slice(0, 10)
+        : new Date().toISOString().slice(0, 10),
+      vendedor: sale.domiciliario_nombre || "",
+      vendedor_id: sale.domiciliario_id || "",
+      metodoPago: sale.metodoPago || "Efectivo",
+      productos:
+        productosOrigen && productosOrigen.length
+          ? productosOrigen.map((p) => ({
+              name: p.producto_nombre || p.name || "",
+              qty: String(p.cantidad || p.qty || 1),
+              price: String(
+                p.precio_unitario || p.precio_venta || p.price || 0,
+              ),
+              producto_id: p.producto_id || p.id || "",
+            }))
+          : [emptyProduct()],
+      descuento: sale.descuento || 0,
+      impuestos: sale.impuestos || 0,
+      observaciones: sale.observaciones || "",
+    };
+  };
 
   const openForm = async (sale = null) => {
     setIsAbonoMode(false);
@@ -255,7 +265,12 @@ export default function Sales() {
       // Cargar detalles de la venta
       try {
         const detalles = await ventasService.getDetalles(sale.id);
-        const saleConDetalles = { ...sale, productos: detalles.data || [] };
+        const detalleLista = detalles.data || [];
+        const saleConDetalles = {
+          ...sale,
+          detalle_ventas: detalleLista,
+          productos: detalleLista,
+        };
         const built = buildFormFromSale(saleConDetalles);
         setFormData(built);
         setClienteQuery(built.cliente);
@@ -294,7 +309,12 @@ export default function Sales() {
     // Cargar detalles de la venta
     try {
       const detalles = await ventasService.getDetalles(sale.id);
-      const saleConDetalles = { ...sale, productos: detalles.data || [] };
+      const detalleLista = detalles.data || [];
+      const saleConDetalles = {
+        ...sale,
+        detalle_ventas: detalleLista,
+        productos: detalleLista,
+      };
       const built = buildFormFromSale(saleConDetalles);
       setFormData(built);
       setClienteQuery(built.cliente);
@@ -329,7 +349,12 @@ export default function Sales() {
     // Cargar detalles de la venta
     try {
       const detalles = await ventasService.getDetalles(sale.id);
-      const saleConDetalles = { ...sale, productos: detalles.data || [] };
+      const detalleLista = detalles.data || [];
+      const saleConDetalles = {
+        ...sale,
+        detalle_ventas: detalleLista,
+        productos: detalleLista,
+      };
       const built = buildFormFromSale(saleConDetalles);
       setFormData(built);
       setClienteQuery(built.cliente);
@@ -394,6 +419,7 @@ export default function Sales() {
           producto_id: p.producto_id,
           cantidad: qty,
           precio_unitario: price,
+          precio_venta: price,
         };
       });
 
@@ -437,20 +463,25 @@ export default function Sales() {
   };
 
   // ===== 4 ESTADOS EN TABLA (rotación al click) =====
-  const ESTADOS = ["pendiente", "en_transito", "entregada", "anulada"];
+  const ESTADOS = ["pendiente", "pagada", "entregada", "cancelada"];
 
   const toggleEstado = async (id) => {
+    const currentSale = sales.find((s) => s.id === id);
+    if (!currentSale) return;
+
+    const idx = ESTADOS.indexOf(currentSale.estado || "pendiente");
+    const nextEstado = ESTADOS[(idx + 1) % ESTADOS.length] || "pendiente";
+
+    // Optimistic UI update
+    setSales((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, estado: nextEstado } : s)),
+    );
+
     try {
-      await ventasService.toggleEstado(id);
-      setSales((prev) =>
-        prev.map((s) => {
-          if (s.id !== id) return s;
-          const idx = ESTADOS.indexOf(s.estado);
-          const next = ESTADOS[(idx + 1) % ESTADOS.length] || "pendiente";
-          return { ...s, estado: next };
-        }),
-      );
+      await ventasService.toggleEstado(id, nextEstado);
     } catch (err) {
+      // Revert on error
+      setSales((prev) => prev.map((s) => (s.id === id ? currentSale : s)));
       alert(err.message || "Error al cambiar estado");
     }
   };
@@ -461,18 +492,17 @@ export default function Sales() {
       return "bg-green-600 text-black hover:bg-green-500";
     if (estado === "pendiente")
       return "bg-yellow-500 text-black hover:bg-yellow-400";
-    if (estado === "en_transito")
-      return "bg-neutral-800 text-white hover:bg-neutral-700";
-    // anulada
+    if (estado === "pagada") return "bg-blue-600 text-black hover:bg-blue-500";
+    // cancelada
     return "bg-red-600 text-black hover:bg-red-500";
   };
 
   const formatEstado = (estado) => {
     const estados = {
       pendiente: "Pendiente",
-      en_transito: "En tránsito",
+      pagada: "Pagada",
       entregada: "Entregada",
-      anulada: "Anulada",
+      cancelada: "Cancelada",
     };
     return estados[estado] || estado;
   };
@@ -519,7 +549,19 @@ export default function Sales() {
     try {
       setLoadingVentaAbonos(true);
       const response = await abonosService.getByVenta(ventaId);
-      setSelectedVentaAbonos(response.data || []);
+      const abonosData = response.data || [];
+      // Enriquecer datos de abonos con información de venta si es necesario
+      const abonosEnriquecidos = await Promise.all(
+        abonosData.map(async (abono) => {
+          try {
+            const ventaInfo = sales.find((s) => s.id === abono.venta_id);
+            return { ...abono, _venta: ventaInfo };
+          } catch {
+            return abono;
+          }
+        }),
+      );
+      setSelectedVentaAbonos(abonosEnriquecidos);
       setIsAbonosOpen(true);
     } catch (err) {
       console.error("Error cargando abonos de la venta:", err);
@@ -550,20 +592,21 @@ export default function Sales() {
     );
     doc.text(`Domiciliario: ${sale.domiciliario_nombre || ""}`, 14, 67);
 
-    const productosData =
-      sale.productos && sale.productos.length > 0
-        ? sale.productos.map((p) => {
-            const qty = p.cantidad || p.qty || 0;
-            const price = p.precio_unitario || p.price || 0;
-            const subtotal = qty * price;
-            return [
-              p.producto_nombre || p.name || "-",
-              qty,
-              `$ ${Number(price).toFixed(2)}`,
-              `$ ${subtotal.toFixed(2)}`,
-            ];
-          })
-        : [];
+    const productosData = (
+      (sale.productos && sale.productos.length > 0
+        ? sale.productos
+        : sale.detalle_ventas || []) || []
+    ).map((p) => {
+      const qty = p.cantidad || p.qty || 0;
+      const price = p.precio_unitario || p.precio_venta || p.price || 0;
+      const subtotal = qty * price;
+      return [
+        p.producto_nombre || p.name || "-",
+        qty,
+        `$ ${Number(price).toFixed(2)}`,
+        `$ ${subtotal.toFixed(2)}`,
+      ];
+    });
 
     autoTable(doc, {
       startY: 77,
@@ -601,8 +644,8 @@ export default function Sales() {
 
   const abonosOrdenados = useMemo(() => {
     return [...abonos].sort((a, b) => {
-      const dateA = new Date(a.fecha_abono || a.fechaAbono || 0);
-      const dateB = new Date(b.fecha_abono || b.fechaAbono || 0);
+      const dateA = new Date(a.fecha || a.fecha_abono || a.fechaAbono || 0);
+      const dateB = new Date(b.fecha || b.fecha_abono || b.fechaAbono || 0);
       return dateB - dateA;
     });
   }, [abonos]);
@@ -764,8 +807,14 @@ export default function Sales() {
                     </div>
                   </td>
                   <td className="p-3">
-                    {sale.productos && sale.productos.length > 0 ? (
-                      sale.productos.map((p, i) => (
+                    {(sale.productos && sale.productos.length > 0
+                      ? sale.productos
+                      : sale.detalle_ventas || []
+                    ).length > 0 ? (
+                      (sale.productos && sale.productos.length > 0
+                        ? sale.productos
+                        : sale.detalle_ventas || []
+                      ).map((p, i) => (
                         <div key={i} className="text-xs">
                           {p.producto_nombre || p.name} x{p.cantidad || p.qty}
                         </div>
@@ -1072,7 +1121,7 @@ export default function Sales() {
                   >
                     <option value="">Seleccionar domiciliario</option>
                     {domiciliarios
-                      .filter((d) => d.estado === "activo")
+                      .filter((d) => d.estado === "disponible")
                       .map((d) => (
                         <option key={d.id} value={d.id}>
                           {d.nombre}
@@ -1489,11 +1538,11 @@ export default function Sales() {
                 <thead className="bg-neutral-800/80 text-neutral-300 text-sm uppercase">
                   <tr>
                     <th className="p-3 font-semibold">Cliente</th>
-                    <th className="p-3 font-semibold">Fecha abono</th>
-                    <th className="p-3 font-semibold">Vendedor</th>
-                    <th className="p-3 font-semibold">Abonado</th>
-                    <th className="p-3 font-semibold">Saldo restante</th>
-                    <th className="p-3 font-semibold">Venta</th>
+                    <th className="p-3 font-semibold">Documento</th>
+                    <th className="p-3 font-semibold">Fecha Abono</th>
+                    <th className="p-3 font-semibold">Monto Abonado</th>
+                    <th className="p-3 font-semibold">Método de Pago</th>
+                    <th className="p-3 font-semibold">Descripción</th>
                   </tr>
                 </thead>
 
@@ -1528,60 +1577,71 @@ export default function Sales() {
                     (selectedVentaAbonos !== null
                       ? selectedVentaAbonos
                       : abonosOrdenados
-                    ).map((a) => (
-                      <tr
-                        key={a.id}
-                        className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
-                      >
-                        <td className="p-3">
-                          <div className="font-semibold">
-                            {a.cliente_nombre || a.cliente || "-"}
-                          </div>
-                          <div className="text-xs text-neutral-400">
-                            {a.cliente_documento
-                              ? `Doc: ${a.cliente_documento}`
-                              : ""}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          {a.fecha_abono
-                            ? new Date(a.fecha_abono).toLocaleDateString(
-                                "es-CO",
-                              )
-                            : a.fechaAbono || "-"}
-                        </td>
-                        <td className="p-3">
-                          {a.vendedor_nombre || a.vendedor || "-"}
-                        </td>
-                        <td className="p-3 font-semibold text-green-400">
-                          ${Number(a.monto || a.abono || 0).toFixed(2)}
-                        </td>
-                        <td className="p-3 font-semibold">
-                          <div className="text-neutral-300">
-                            $
-                            {Number(
-                              a.saldo_restante || a.saldoRestante || 0,
-                            ).toFixed(2)}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div className="text-xs">
-                            {a.fecha_venta
-                              ? new Date(a.fecha_venta).toLocaleDateString(
-                                  "es-CO",
-                                )
-                              : a.fechaVenta || "-"}
-                          </div>
-                          <div className="text-xs text-neutral-400">
-                            ID:{" "}
-                            {a.venta_id
-                              ? String(a.venta_id).slice(0, 8)
-                              : a.saleId || "-"}
-                            ...
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    ).map((a) => {
+                      const ventaRelacionada =
+                        a._venta ||
+                        sales.find((s) => s.id === a.venta_id) ||
+                        {};
+                      const clienteNombre =
+                        ventaRelacionada.cliente_nombre || "-";
+                      const clienteDocumento =
+                        ventaRelacionada.cliente_documento || "-";
+
+                      return (
+                        <tr
+                          key={a.id}
+                          className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
+                        >
+                          <td className="p-3">
+                            <div className="font-semibold">{clienteNombre}</div>
+                            <div className="text-xs text-neutral-400">
+                              {ventaRelacionada.domiciliario_nombre &&
+                                `Vendedor: ${ventaRelacionada.domiciliario_nombre}`}
+                            </div>
+                          </td>
+                          <td className="p-3 text-sm">{clienteDocumento}</td>
+                          <td className="p-3">
+                            {a.fecha
+                              ? new Date(a.fecha).toLocaleDateString("es-CO", {
+                                  year: "numeric",
+                                  month: "2-digit",
+                                  day: "2-digit",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "-"}
+                          </td>
+                          <td className="p-3 font-semibold text-green-400">
+                            ${Number(a.monto || 0).toFixed(2)}
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-semibold uppercase ${
+                                a.metodo_pago === "efectivo"
+                                  ? "bg-green-600/20 text-green-400"
+                                  : a.metodo_pago === "transferencia"
+                                    ? "bg-blue-600/20 text-blue-400"
+                                    : a.metodo_pago === "tarjeta"
+                                      ? "bg-purple-600/20 text-purple-400"
+                                      : "bg-neutral-600/20 text-neutral-400"
+                              }`}
+                            >
+                              {a.metodo_pago || "-"}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="text-sm">
+                              {a.descripcion && a.descripcion !== "-"
+                                ? a.descripcion
+                                : "-"}
+                            </div>
+                            <div className="text-xs text-neutral-400 mt-1">
+                              ID: {a.id ? String(a.id).slice(0, 8) : "-"}...
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

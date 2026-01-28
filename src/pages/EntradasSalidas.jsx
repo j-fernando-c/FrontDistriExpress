@@ -1,37 +1,78 @@
 // src/pages/EntradasSalidas.jsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FiSearch, FiPlus, FiEye, FiEdit2, FiTrash2 } from "react-icons/fi";
+import { entradas_salidas } from "../services/entradas_salidasService";
+import { productosService } from "../services/productosService";
 
-// Productos quemados (puedes luego traerlos del módulo real)
-const AVAILABLE_PRODUCTS = [
-  { id: "p1", nombre: "Arroz Integral" },
-  { id: "p2", nombre: "Aceite de Oliva" },
-  { id: "p3", nombre: "Quinua Real" },
-  { id: "p4", nombre: "Harina de Trigo" },
-  { id: "p5", nombre: "Lentejas" },
-  { id: "p6", nombre: "Frijol" },
-];
+// Productos (se cargan desde el servicio)
+// Estructura usada en este módulo: [{ id, nombre }]
 
 export default function EntradasSalidas() {
   // ===== DATA =====
-  const [movs, setMovs] = useState([
-    {
-      id: 1,
-      tipo: "Entrada",
-      producto: "Arroz Integral",
-      cantidad: 10,
-      precio: 4800,
-      fecha: "2025-12-12",
-    },
-    {
-      id: 2,
-      tipo: "Salida",
-      producto: "Aceite de Oliva",
-      cantidad: 3,
-      precio: 12900,
-      fecha: "2025-12-12",
-    },
-  ]);
+  const [movs, setMovs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [productos, setProductos] = useState([]);
+  const [loadingProductos, setLoadingProductos] = useState(false);
+
+  useEffect(() => {
+    fetchMovs();
+    fetchProductos();
+  }, []);
+
+  const fetchProductos = async () => {
+    setLoadingProductos(true);
+    try {
+      const res = await productosService.getAll();
+      const list = res?.data ?? res ?? [];
+      const mapped = Array.isArray(list)
+        ? list.map((p) => ({
+            id: p.id,
+            nombre:
+              p.nombre ?? p.nombre_producto ?? p.producto_nombre ?? p.nombre,
+          }))
+        : [];
+      setProductos(mapped);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingProductos(false);
+    }
+  };
+
+  const mapBackendToFrontend = (m) => ({
+    id: m.id,
+    tipo: (m.tipo || "").charAt(0).toUpperCase() + (m.tipo || "").slice(1),
+    producto: m.producto_nombre ?? m.producto ?? "",
+    cantidad: Number(m.cantidad) || 0,
+    precio: m.precio_producto
+      ? Number(parseFloat(m.precio_producto))
+      : m.precio
+        ? Number(parseFloat(m.precio))
+        : 0,
+    fecha: m.fecha
+      ? String(m.fecha).split("T")[0]
+      : m.fecha || new Date().toISOString().slice(0, 10),
+    estado: (m.estado || "").toLowerCase(),
+    observaciones: m.observaciones ?? "",
+  });
+
+  const fetchMovs = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await entradas_salidas.getAll();
+      const list = res?.data ?? res ?? [];
+      const mapped = Array.isArray(list) ? list.map(mapBackendToFrontend) : [];
+      setMovs(mapped);
+    } catch (err) {
+      console.error(err);
+      setError("Error cargando registros");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ===== UI STATE =====
   const [search, setSearch] = useState("");
@@ -55,7 +96,10 @@ export default function EntradasSalidas() {
 
   const totalPages = Math.max(1, Math.ceil(filteredMovs.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedMovs = filteredMovs.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedMovs = filteredMovs.slice(
+    startIndex,
+    startIndex + itemsPerPage,
+  );
 
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
@@ -73,6 +117,7 @@ export default function EntradasSalidas() {
     producto: "",
     cantidad: "1",
     precio: "0",
+    observaciones: "",
     fecha: new Date().toISOString().slice(0, 10),
   };
 
@@ -85,11 +130,11 @@ export default function EntradasSalidas() {
 
   const productOptions = useMemo(() => {
     const q = productQuery.trim().toLowerCase();
-    if (!q) return AVAILABLE_PRODUCTS.slice(0, 6);
-    return AVAILABLE_PRODUCTS.filter((p) =>
-      p.nombre.toLowerCase().includes(q)
-    ).slice(0, 8);
-  }, [productQuery]);
+    if (!q) return productos.slice(0, 6);
+    return productos
+      .filter((p) => p.nombre.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [productQuery, productos]);
 
   const openCreate = () => {
     setIsViewMode(false);
@@ -113,6 +158,7 @@ export default function EntradasSalidas() {
       cantidad: String(mov.cantidad ?? "1"),
       precio: String(mov.precio ?? "0"),
       fecha: mov.fecha || new Date().toISOString().slice(0, 10),
+      observaciones: mov.observaciones || "",
     });
     setProductQuery(mov.producto || "");
     setShowProductDropdown(false);
@@ -129,6 +175,7 @@ export default function EntradasSalidas() {
       cantidad: String(mov.cantidad ?? "1"),
       precio: String(mov.precio ?? "0"),
       fecha: mov.fecha || new Date().toISOString().slice(0, 10),
+      observaciones: mov.observaciones || "",
     });
     setProductQuery(mov.producto || "");
     setShowProductDropdown(false);
@@ -150,20 +197,27 @@ export default function EntradasSalidas() {
 
     if (!formData.tipo) newErrors.tipo = "El tipo es obligatorio";
 
-    if (!formData.producto.trim()) newErrors.producto = "El producto es obligatorio";
+    if (!formData.producto.trim())
+      newErrors.producto = "El producto es obligatorio";
 
     if (!String(formData.cantidad).trim()) {
       newErrors.cantidad = "La cantidad es obligatoria";
     } else {
       const n = Number(formData.cantidad);
-      if (Number.isNaN(n) || n <= 0) newErrors.cantidad = "La cantidad debe ser mayor a 0";
+      if (Number.isNaN(n) || n <= 0)
+        newErrors.cantidad = "La cantidad debe ser mayor a 0";
     }
 
     if (!String(formData.precio).trim()) {
       newErrors.precio = "El precio es obligatorio";
     } else {
       const n = Number(formData.precio);
-      if (Number.isNaN(n) || n < 0) newErrors.precio = "El precio debe ser 0 o mayor";
+      if (Number.isNaN(n) || n < 0)
+        newErrors.precio = "El precio debe ser 0 o mayor";
+    }
+
+    if (!String(formData.observaciones).trim()) {
+      newErrors.observaciones = "Las observaciones son obligatorias";
     }
 
     if (!formData.fecha) newErrors.fecha = "La fecha es obligatoria";
@@ -177,34 +231,56 @@ export default function EntradasSalidas() {
     return Number.isFinite(n) ? n : 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (isViewMode) return;
     if (!validate()) return;
 
-    const payload = {
-      tipo: formData.tipo,
-      producto: formData.producto.trim(),
-      cantidad: toNumberSafe(formData.cantidad),
-      precio: toNumberSafe(formData.precio),
-      fecha: formData.fecha || new Date().toISOString().slice(0, 10),
-    };
-
-    if (editingId) {
-      setMovs((prev) =>
-        prev.map((m) => (m.id === editingId ? { ...m, ...payload } : m))
+    setSaving(true);
+    try {
+      // try to match producto id from fetched `productos` when possible
+      const found = productos.find(
+        (p) =>
+          p.nombre.toLowerCase() === formData.producto.trim().toLowerCase(),
       );
-    } else {
-      const newId = movs.length ? Math.max(...movs.map((m) => m.id)) + 1 : 1;
-      setMovs((prev) => [...prev, { id: newId, ...payload }]);
-    }
 
-    closeModal();
+      const payload = {
+        tipo: String(formData.tipo || "").toLowerCase(),
+        producto_id: found ? found.id : undefined,
+        cantidad: toNumberSafe(formData.cantidad),
+        precio: String(toNumberSafe(formData.precio).toFixed(2)),
+        estado: "activo",
+        observaciones: formData.observaciones || "",
+      };
+
+      if (editingId) {
+        await entradas_salidas.update(editingId, payload);
+      } else {
+        await entradas_salidas.create(payload);
+      }
+
+      await fetchMovs();
+      closeModal();
+    } catch (err) {
+      console.error(err);
+      alert("Error guardando registro");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const deleteMov = (id) => {
+  const deleteMov = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar este registro?")) return;
-    setMovs((prev) => prev.filter((m) => m.id !== id));
+    setSaving(true);
+    try {
+      await entradas_salidas.delete(id);
+      await fetchMovs();
+    } catch (err) {
+      console.error(err);
+      alert("Error eliminando registro");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const money = (n) =>
@@ -283,7 +359,7 @@ export default function EntradasSalidas() {
                 <td className="p-3">
                   <span
                     className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-default transition ${tipoBadge(
-                      m.tipo
+                      m.tipo,
                     )}`}
                   >
                     {m.tipo}
@@ -341,7 +417,7 @@ export default function EntradasSalidas() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredMovs.length
+                  filteredMovs.length,
                 )}`}{" "}
             de {filteredMovs.length} registros
           </span>
@@ -389,8 +465,8 @@ export default function EntradasSalidas() {
                 {isViewMode
                   ? "Ver Entrada o Salida"
                   : editingId
-                  ? "Editar Entrada o Salida"
-                  : "Registrar Entrada o Salida"}
+                    ? "Editar Entrada o Salida"
+                    : "Registrar Entrada o Salida"}
               </h3>
               <button
                 onClick={closeModal}
@@ -437,13 +513,41 @@ export default function EntradasSalidas() {
                     value={formData.fecha}
                     disabled={isViewMode}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, fecha: e.target.value }))
+                      setFormData((prev) => ({
+                        ...prev,
+                        fecha: e.target.value,
+                      }))
                     }
                   />
                   {errors.fecha && (
                     <p className="text-xs text-red-400 mt-1">{errors.fecha}</p>
                   )}
                 </div>
+              </div>
+
+              {/* Observaciones */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-300">
+                  Observaciones{" "}
+                  <span className="text-neutral-400 text-xs">(opcional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  className={`${inputBase} ${isViewMode ? disabledInput : ""}`}
+                  value={formData.observaciones}
+                  disabled={isViewMode}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      observaciones: e.target.value,
+                    }))
+                  }
+                />
+                {errors.observaciones && (
+                  <p className="text-xs text-red-400 mt-1">
+                    {errors.observaciones}
+                  </p>
+                )}
               </div>
 
               {/* Producto (buscador) */}
@@ -493,7 +597,10 @@ export default function EntradasSalidas() {
                           className="w-full text-left px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800 transition"
                           onClick={() => {
                             setProductQuery(p.nombre);
-                            setFormData((prev) => ({ ...prev, producto: p.nombre }));
+                            setFormData((prev) => ({
+                              ...prev,
+                              producto: p.nombre,
+                            }));
                             setShowProductDropdown(false);
                           }}
                         >
@@ -520,11 +627,16 @@ export default function EntradasSalidas() {
                     value={formData.cantidad}
                     disabled={isViewMode}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, cantidad: e.target.value }))
+                      setFormData((prev) => ({
+                        ...prev,
+                        cantidad: e.target.value,
+                      }))
                     }
                   />
                   {errors.cantidad && (
-                    <p className="text-xs text-red-400 mt-1">{errors.cantidad}</p>
+                    <p className="text-xs text-red-400 mt-1">
+                      {errors.cantidad}
+                    </p>
                   )}
                 </div>
 
@@ -541,7 +653,10 @@ export default function EntradasSalidas() {
                     value={formData.precio}
                     disabled={isViewMode}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, precio: e.target.value }))
+                      setFormData((prev) => ({
+                        ...prev,
+                        precio: e.target.value,
+                      }))
                     }
                     onFocus={() => {
                       if (isViewMode) return;

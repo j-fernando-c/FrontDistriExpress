@@ -1,5 +1,5 @@
 // src/pages/Pedidos.jsx
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   FiSearch,
   FiEye,
@@ -10,6 +10,7 @@ import {
 } from "react-icons/fi";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { pedidosService } from "../services/pedidosService";
 
 // Productos disponibles solo para el front (precio para calcular totales)
 const AVAILABLE_PRODUCTS = [
@@ -34,9 +35,7 @@ function AutocompleteInput({
   const filtered = useMemo(() => {
     const q = (value || "").toLowerCase().trim();
     if (!q) return items.slice(0, 8);
-    return items
-      .filter((it) => it.toLowerCase().includes(q))
-      .slice(0, 8);
+    return items.filter((it) => it.toLowerCase().includes(q)).slice(0, 8);
   }, [value, items]);
 
   return (
@@ -98,74 +97,64 @@ export default function Pedidos() {
       "Restaurante Don Pepe",
       "Minimercado La 14",
     ],
-    []
+    [],
   );
 
   const VENDEDORES = useMemo(
     () => ["Carlos Mendoza", "María González", "Juan Pérez", "María Torres"],
-    []
+    [],
   );
 
   const PRODUCTOS_SUGERIDOS = useMemo(
     () => AVAILABLE_PRODUCTS.map((p) => p.nombre),
-    []
+    [],
   );
 
   // ✅ Estados (4)
   const ESTADOS = useMemo(
-    () => ["Pendiente", "En transito", "Completada", "Anulado"],
-    []
+    () => ["confirmado", "en_preparacion", "enviado", "entregado", "cancelado"], // servicio de pedidos (importado arriba)
+    [],
   );
 
-  const [orders, setOrders] = useState([
-    {
-      id: 1,
-      cliente: "Restaurante El Buen Sabor",
-      telefono: "555-0101",
-      fechaEntrega: "2025-02-17",
-      vendedor: "Carlos Mendoza",
-      direccion: "Calle 10 #20-30, Centro",
-      estado: "Pendiente",
-      items: [
-        {
-          productoId: "p1",
-          nombre: "Arroz integral",
-          cantidad: 5,
-          precio: 12.5,
-          subtotal: 62.5,
-        },
-        {
-          productoId: "p2",
-          nombre: "Aceite de Oliva Extra Virgen",
-          cantidad: 2,
-          precio: 23.8,
-          subtotal: 47.6,
-        },
-      ],
-      observaciones: "",
-      total: 110.1,
-    },
-    {
-      id: 2,
-      cliente: "Supermercado La Canasta",
-      telefono: "555-0102",
-      fechaEntrega: "2025-02-18",
-      vendedor: "María González",
-      direccion: "Carrera 15 #30-10, Norte",
-      estado: "En transito",
-      items: [
-        {
-          productoId: "p3",
-          nombre: "Quinua Real",
-          cantidad: 10,
-          precio: 12.8,
-          subtotal: 128,
-        },
-      ],
-      observaciones: "Entregar en horario de la tarde.",
-      total: 128,
-    },
-  ]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const mapBackendToFrontend = (o) => ({
+    id: o.id,
+    cliente: o.cliente_nombre ?? o.cliente ?? "",
+    telefono: o.cliente_telefono ?? o.telefono ?? "",
+    fechaEntrega: o.fecha ? o.fecha.split("T")[0] : (o.fechaEntrega ?? ""),
+    vendedor: o.domiciliario_nombre ?? o.vendedor ?? "",
+    direccion: o.cliente_direccion ?? o.direccion ?? "",
+    estado: o.estado
+      ? String(o.estado).charAt(0).toUpperCase() + String(o.estado).slice(1)
+      : "",
+    items: o.items ?? [],
+    observaciones: o.observaciones ?? "",
+    total: o.total ? parseFloat(o.total) : (o.total ?? 0),
+  });
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await pedidosService.getAll();
+      const list = res?.data ?? res ?? [];
+      const mapped = Array.isArray(list) ? list.map(mapBackendToFrontend) : [];
+      setOrders(mapped);
+    } catch (err) {
+      console.error(err);
+      setError("Error cargando pedidos");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
 
@@ -204,12 +193,12 @@ export default function Pedidos() {
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredOrders.length / itemsPerPage)
+    Math.ceil(filteredOrders.length / itemsPerPage),
   );
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedOrders = filteredOrders.slice(
     startIndex,
-    startIndex + itemsPerPage
+    startIndex + itemsPerPage,
   );
 
   const handleSearchChange = (e) => {
@@ -342,7 +331,7 @@ export default function Pedidos() {
     if (isReadOnly) return;
     setFormData((prev) => {
       const productos = prev.productos.map((p, i) =>
-        i === index ? { ...p, [field]: value } : p
+        i === index ? { ...p, [field]: value } : p,
       );
       return { ...prev, productos };
     });
@@ -372,7 +361,9 @@ export default function Pedidos() {
       .map((p) => {
         const qty = parseFloat(p.qty) || 0;
         const price = parseFloat(p.price) || 0;
-        const found = AVAILABLE_PRODUCTS.find((ap) => ap.nombre === p.name.trim());
+        const found = AVAILABLE_PRODUCTS.find(
+          (ap) => ap.nombre === p.name.trim(),
+        );
         return {
           productoId: found ? found.id : `x-${p.name.trim()}`,
           nombre: p.name.trim(),
@@ -399,8 +390,8 @@ export default function Pedidos() {
                 observaciones: formData.observaciones,
                 total,
               }
-            : o
-        )
+            : o,
+        ),
       );
     } else {
       const newId = orders.length
@@ -440,15 +431,19 @@ export default function Pedidos() {
         const idx = ESTADOS.indexOf(o.estado);
         const next = ESTADOS[(idx + 1) % ESTADOS.length] || "Pendiente";
         return { ...o, estado: next };
-      })
+      }),
     );
   };
 
   const estadoClasses = (estado) => {
-    if (estado === "Completada") return "bg-green-600 text-black hover:bg-green-500";
-    if (estado === "Pendiente") return "bg-yellow-500 text-black hover:bg-yellow-400";
-    if (estado === "En transito") return "bg-blue-600 text-black hover:bg-blue-500";
-    return "bg-red-600 text-black hover:bg-red-500"; // Anulado
+    const s = String(estado || "").toLowerCase();
+    if (s === "confirmado") return "bg-green-600 text-black hover:bg-green-500";
+    if (s === "en_preparacion")
+      return "bg-yellow-500 text-black hover:bg-yellow-400";
+    if (s === "enviado") return "bg-blue-600 text-black hover:bg-blue-500";
+    if (s === "entregado") return "bg-green-700 text-black hover:bg-green-600";
+    if (s === "cancelado") return "bg-red-600 text-black hover:bg-red-500";
+    return "bg-neutral-700 text-white";
   };
 
   // ===== PDF =====
@@ -563,7 +558,7 @@ export default function Pedidos() {
                   <button
                     onClick={() => toggleEstado(o.id)}
                     className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
-                      o.estado
+                      o.estado,
                     )}`}
                   >
                     {o.estado}
@@ -630,7 +625,7 @@ export default function Pedidos() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredOrders.length
+                  filteredOrders.length,
                 )}`}{" "}
             de {filteredOrders.length} pedidos
           </span>
@@ -677,8 +672,8 @@ export default function Pedidos() {
               {isReadOnly
                 ? "Detalle de Pedido"
                 : editingId
-                ? "Editar Pedido"
-                : "Registrar Nuevo Pedido"}
+                  ? "Editar Pedido"
+                  : "Registrar Nuevo Pedido"}
             </h3>
 
             <form
@@ -803,7 +798,8 @@ export default function Pedidos() {
 
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-medium text-neutral-300">
-                      Dirección de Entrega <span className="text-red-500">*</span>
+                      Dirección de Entrega{" "}
+                      <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -871,7 +867,9 @@ export default function Pedidos() {
                             inputClassName={`w-full p-2.5 bg-neutral-900 border border-neutral-700 rounded-xl text-sm text-neutral-200 outline-none ${
                               !isReadOnly && "focus:border-green-500"
                             } ${isReadOnly && "opacity-70 cursor-not-allowed"}`}
-                            onChange={(val) => updateProducto(index, "name", val)}
+                            onChange={(val) =>
+                              updateProducto(index, "name", val)
+                            }
                             onPick={(val) => pickProducto(index, val)}
                           />
                         </div>

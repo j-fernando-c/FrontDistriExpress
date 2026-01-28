@@ -1,5 +1,5 @@
 // src/pages/Providers.jsx  (o Proveedores.jsx)
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   FiSearch,
   FiEye,
@@ -8,6 +8,7 @@ import {
   FiUser,
   FiBriefcase,
 } from "react-icons/fi";
+import { proveedoresService } from "../services/proveedoresService";
 
 const COLOMBIA_CITIES = [
   "Bogotá",
@@ -23,33 +24,50 @@ const COLOMBIA_CITIES = [
 ];
 
 export default function Providers() {
-  // ===== DATA INICIAL =====
-  const [providers, setProviders] = useState([
-    {
-      id: 1,
-      nombre: "Distribuidora Nacional de Granos S.A.S.",
-      tipoPersona: "Jurídica",
-      documentoNit: "900123456-1",
-      telefono: "555-0101",
-      email: "contacto@distribuidoranacional.com",
-      ciudad: "Bogotá",
-      direccion: "Cra 10 #20-30",
-      observaciones: "",
-      estado: "Activo",
-    },
-    {
-      id: 2,
-      nombre: "Aceites Premium Colombia Ltda.",
-      tipoPersona: "Jurídica",
-      documentoNit: "800234567-2",
-      telefono: "555-0102",
-      email: "ventas@aceitespremium.com",
-      ciudad: "Medellín",
-      direccion: "Cl 45 #55-10",
-      observaciones: "",
-      estado: "Activo",
-    },
-  ]);
+  // ===== DATA INICIAL (desde servicio) =====
+  const [providers, setProviders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  // servicio (import arriba)
+
+  useEffect(() => {
+    fetchProviders();
+  }, []);
+
+  const mapBackendToFrontend = (u) => ({
+    id: u.id,
+    nombre: u.nombre_o_razon_social ?? u.nombre ?? "",
+    tipoPersona: u.tipo ?? "",
+    documentoNit: u.documento ?? u.documentoNit ?? "",
+    contacto: u.contacto ?? "",
+    email: u.email ?? "",
+    telefono: u.telefono ?? "",
+    ciudad: u.ciudad ?? "",
+    direccion: u.direccion ?? "",
+    observaciones: u.observaciones ?? "",
+    estado:
+      typeof u.estado === "string" && u.estado.toLowerCase() === "activo"
+        ? "activo"
+        : "inactivo",
+  });
+
+  const fetchProviders = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await proveedoresService.getAll();
+      const list = res?.data ?? res ?? [];
+      const mapped = Array.isArray(list) ? list.map(mapBackendToFrontend) : [];
+      setProviders(mapped);
+    } catch (err) {
+      console.error(err);
+      setError("Error cargando proveedores");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [search, setSearch] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -70,9 +88,15 @@ export default function Providers() {
     );
   });
 
-  const totalPages = Math.max(1, Math.ceil(filteredProviders.length / itemsPerPage));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredProviders.length / itemsPerPage),
+  );
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedProviders = filteredProviders.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedProviders = filteredProviders.slice(
+    startIndex,
+    startIndex + itemsPerPage,
+  );
 
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
@@ -90,6 +114,7 @@ export default function Providers() {
     tipoPersona: "Jurídica",
     documentoNit: "",
     telefono: "",
+    contacto: "",
     email: "",
     ciudad: "",
     direccion: "",
@@ -105,7 +130,10 @@ export default function Providers() {
   const citySuggestions = useMemo(() => {
     const q = (cityQuery || "").toLowerCase().trim();
     if (!q) return COLOMBIA_CITIES.slice(0, 6);
-    return COLOMBIA_CITIES.filter((c) => c.toLowerCase().includes(q)).slice(0, 6);
+    return COLOMBIA_CITIES.filter((c) => c.toLowerCase().includes(q)).slice(
+      0,
+      6,
+    );
   }, [cityQuery]);
 
   const handleChange = (field, value) => {
@@ -138,6 +166,7 @@ export default function Providers() {
       tipoPersona: provider.tipoPersona,
       documentoNit: provider.documentoNit,
       telefono: provider.telefono,
+      contacto: provider.contacto ?? "",
       email: provider.email,
       ciudad: provider.ciudad,
       direccion: provider.direccion,
@@ -156,6 +185,7 @@ export default function Providers() {
       tipoPersona: provider.tipoPersona,
       documentoNit: provider.documentoNit,
       telefono: provider.telefono,
+      contacto: provider.contacto ?? "",
       email: provider.email,
       ciudad: provider.ciudad,
       direccion: provider.direccion,
@@ -181,7 +211,11 @@ export default function Providers() {
       return false;
     }
     if (!formData.documentoNit.trim()) {
-      alert(formData.tipoPersona === "Jurídica" ? "El NIT es obligatorio" : "El documento es obligatorio");
+      alert(
+        formData.tipoPersona === "Jurídica"
+          ? "El NIT es obligatorio"
+          : "El documento es obligatorio",
+      );
       return false;
     }
     if (!formData.telefono.trim()) {
@@ -208,56 +242,74 @@ export default function Providers() {
     return true;
   };
 
-  const saveProvider = () => {
+  const saveProvider = async () => {
     if (!validateForm()) return;
 
-    const providerBase = {
-      nombre: formData.nombre.trim(),
-      tipoPersona: formData.tipoPersona,
-      documentoNit: formData.documentoNit.trim(),
-      telefono: formData.telefono.trim(),
-      email: formData.email.trim(),
-      ciudad: formData.ciudad.trim(),
-      direccion: formData.direccion.trim(),
-      observaciones: (formData.observaciones || "").trim(),
-    };
+    setSaving(true);
+    try {
+      const payload = {
+        tipo: formData.tipoPersona,
+        tipo_documento:
+          formData.tipoPersona === "Jurídica"
+            ? "NIT"
+            : (formData.tipo_documento ?? ""),
+        documento: formData.documentoNit.trim(),
+        nombre_o_razon_social: formData.nombre.trim(),
+        contacto: formData.contacto ?? "",
+        email: formData.email.trim(),
+        telefono: formData.telefono.trim(),
+        estado: (formData.estado || "activo").toLowerCase(),
+      };
 
-    if (editingId) {
-      setProviders((prev) =>
-        prev.map((p) => (p.id === editingId ? { ...p, ...providerBase } : p))
-      );
-    } else {
-      const newId = providers.length ? Math.max(...providers.map((p) => p.id)) + 1 : 1;
-      setProviders((prev) => [
-        ...prev,
-        {
-          id: newId,
-          ...providerBase,
-          estado: "Activo",
-        },
-      ]);
+      if (editingId) {
+        await proveedoresService.update(editingId, payload);
+      } else {
+        await proveedoresService.create(payload);
+      }
+
+      await fetchProviders();
+      setIsFormOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Error guardando proveedor");
+    } finally {
+      setSaving(false);
     }
-
-    setIsFormOpen(false);
   };
 
-  const deleteProvider = (id) => {
+  const deleteProvider = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar este proveedor?")) return;
-    setProviders((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await proveedoresService.delete(id);
+      await fetchProviders();
+    } catch (err) {
+      console.error(err);
+      alert("Error eliminando proveedor");
+    }
   };
 
-  const toggleEstado = (id) => {
-    setProviders((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, estado: p.estado === "Activo" ? "Inactivo" : "Activo" } : p
-      )
-    );
+  const toggleEstado = async (id) => {
+    const p = providers.find((x) => x.id === id);
+    if (!p) return;
+    const newEstado =
+      (p.estado || "").toLowerCase() === "activo" ? "inactivo" : "activo";
+    try {
+      await proveedoresService.toggleEstado(id, newEstado);
+      setProviders((prev) =>
+        prev.map((prov) =>
+          prov.id === id ? { ...prov, estado: newEstado } : prov,
+        ),
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Error cambiando estado");
+    }
   };
 
   const disabledField = isViewMode;
 
   const estadoBtnClass = (estado) =>
-    estado === "Activo"
+    (estado || "").toString().toLowerCase() === "activo"
       ? "bg-green-600 text-black hover:bg-green-500"
       : "bg-red-600 text-black hover:bg-red-500";
 
@@ -315,6 +367,13 @@ export default function Providers() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
+            {loading && (
+              <tr>
+                <td colSpan={8} className="p-6 text-center text-neutral-400">
+                  {error ? error : "Cargando proveedores..."}
+                </td>
+              </tr>
+            )}
             {paginatedProviders.map((p) => (
               <tr
                 key={p.id}
@@ -340,10 +399,12 @@ export default function Providers() {
                   <button
                     onClick={() => toggleEstado(p.id)}
                     className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoBtnClass(
-                      p.estado
+                      p.estado,
                     )}`}
                   >
-                    {p.estado}
+                    {p.estado
+                      ? p.estado.charAt(0).toUpperCase() + p.estado.slice(1)
+                      : ""}
                   </button>
                 </td>
 
@@ -392,7 +453,7 @@ export default function Providers() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredProviders.length
+                  filteredProviders.length,
                 )}`}{" "}
             de {filteredProviders.length} proveedores
           </span>
@@ -441,8 +502,8 @@ export default function Providers() {
                 {isViewMode
                   ? "Detalle de Proveedor"
                   : editingId
-                  ? "Editar Proveedor"
-                  : "Registrar Nuevo Proveedor"}
+                    ? "Editar Proveedor"
+                    : "Registrar Nuevo Proveedor"}
               </h3>
 
               <button
@@ -465,7 +526,9 @@ export default function Providers() {
                     <select
                       className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
                       value={formData.tipoPersona}
-                      onChange={(e) => handleChange("tipoPersona", e.target.value)}
+                      onChange={(e) =>
+                        handleChange("tipoPersona", e.target.value)
+                      }
                       disabled={disabledField}
                     >
                       <option value="Jurídica">Jurídica</option>
@@ -476,7 +539,8 @@ export default function Providers() {
                   {/* Nombre */}
                   <div className="flex flex-col gap-1 md:col-span-2">
                     <label className="text-sm">
-                      Nombre de proveedor <span className="text-red-500">*</span>
+                      Nombre de proveedor{" "}
+                      <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -491,20 +555,37 @@ export default function Providers() {
                   {/* Documento/NIT */}
                   <div className="flex flex-col gap-1">
                     <label className="text-sm">
-                      {formData.tipoPersona === "Jurídica" ? "NIT" : "Documento"}{" "}
+                      {formData.tipoPersona === "Jurídica"
+                        ? "NIT"
+                        : "Documento"}{" "}
                       <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
                       value={formData.documentoNit}
-                      onChange={(e) => handleChange("documentoNit", e.target.value)}
+                      onChange={(e) =>
+                        handleChange("documentoNit", e.target.value)
+                      }
                       disabled={disabledField}
                       placeholder={
                         formData.tipoPersona === "Jurídica"
                           ? "Número de NIT"
                           : "Número de documento"
                       }
+                    />
+                  </div>
+
+                  {/* Contacto (opcional) */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm">Contacto</label>
+                    <input
+                      type="text"
+                      className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
+                      value={formData.contacto}
+                      onChange={(e) => handleChange("contacto", e.target.value)}
+                      disabled={disabledField}
+                      placeholder="Nombre del contacto"
                     />
                   </div>
 
@@ -563,25 +644,27 @@ export default function Providers() {
                       placeholder="Ciudad"
                     />
 
-                    {!disabledField && showCitySuggestions && citySuggestions.length > 0 && (
-                      <div className="absolute top-[78px] left-0 w-full bg-neutral-900 border border-neutral-700 rounded-xl shadow-lg overflow-hidden z-50">
-                        {citySuggestions.map((c) => (
-                          <button
-                            type="button"
-                            key={c}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setCityQuery(c);
-                              handleChange("ciudad", c);
-                              setShowCitySuggestions(false);
-                            }}
-                            className="w-full text-left px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-800"
-                          >
-                            {c}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {!disabledField &&
+                      showCitySuggestions &&
+                      citySuggestions.length > 0 && (
+                        <div className="absolute top-[78px] left-0 w-full bg-neutral-900 border border-neutral-700 rounded-xl shadow-lg overflow-hidden z-50">
+                          {citySuggestions.map((c) => (
+                            <button
+                              type="button"
+                              key={c}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setCityQuery(c);
+                                handleChange("ciudad", c);
+                                setShowCitySuggestions(false);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-800"
+                            >
+                              {c}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                   </div>
                 </div>
 
@@ -609,7 +692,9 @@ export default function Providers() {
                     rows={3}
                     className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-xl text-neutral-200 outline-none focus:border-green-500"
                     value={formData.observaciones}
-                    onChange={(e) => handleChange("observaciones", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("observaciones", e.target.value)
+                    }
                     disabled={disabledField}
                     placeholder="Notas adicionales sobre el proveedor..."
                   />
@@ -628,10 +713,15 @@ export default function Providers() {
 
               {!isViewMode && (
                 <button
-                  className="px-5 py-2 bg-green-600 hover:bg-green-500 text-black font-semibold rounded-xl transition"
+                  className="px-5 py-2 bg-green-600 hover:bg-green-500 text-black font-semibold rounded-xl transition disabled:opacity-50"
                   onClick={saveProvider}
+                  disabled={saving}
                 >
-                  {editingId ? "Guardar Cambios" : "Registrar Proveedor"}
+                  {saving
+                    ? "Guardando..."
+                    : editingId
+                      ? "Guardar Cambios"
+                      : "Registrar Proveedor"}
                 </button>
               )}
             </div>

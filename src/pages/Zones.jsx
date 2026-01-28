@@ -1,52 +1,13 @@
 // src/pages/Zones.jsx
-import { useState } from "react";
-import {
-  FiSearch,
-  FiEye,
-  FiEdit2,
-  FiTrash2,
-  FiPlus,
-} from "react-icons/fi";
+import { useEffect, useState } from "react";
+import { FiSearch, FiEye, FiEdit2, FiTrash2, FiPlus } from "react-icons/fi";
+import { zonasService } from "../services/zonasService";
 
 export default function Zones() {
-  const [zones, setZones] = useState([
-    {
-      id: 1,
-      nombre: "Zona Norte",
-      descripcion: "Zona de distribución norte - Categoría urbana",
-      observaciones: "Cobertura principal en barrios residenciales.",
-      tiendas: [
-        {
-          nombre: "Tienda Norte 1",
-          contacto: "Carlos López",
-          telefono: "555-0101",
-          direccion: "Calle 10 #12-34",
-        },
-        {
-          nombre: "Tienda Norte 2",
-          contacto: "Ana Pérez",
-          telefono: "555-0102",
-          direccion: "Carrera 15 #20-10",
-        },
-      ],
-      estado: "Activa",
-    },
-    {
-      id: 2,
-      nombre: "Zona Sur",
-      descripcion: "Zona de distribución sur - Categoría rural",
-      observaciones: "",
-      tiendas: [
-        {
-          nombre: "Tienda Sur 1",
-          contacto: "Luis Martínez",
-          telefono: "555-0201",
-          direccion: "Vereda La Esperanza",
-        },
-      ],
-      estado: "Inactiva",
-    },
-  ]);
+  const [zones, setZones] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
 
   const [search, setSearch] = useState("");
 
@@ -82,12 +43,12 @@ export default function Zones() {
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredZones.length / itemsPerPage)
+    Math.ceil(filteredZones.length / itemsPerPage),
   );
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedZones = filteredZones.slice(
     startIndex,
-    startIndex + itemsPerPage
+    startIndex + itemsPerPage,
   );
 
   const handleSearchChange = (e) => {
@@ -101,6 +62,58 @@ export default function Zones() {
   };
 
   // ===== FORM HELPERS =====
+  useEffect(() => {
+    fetchZones();
+  }, []);
+
+  const mapBackendToFrontend = (z) => ({
+    id: z.id,
+    // zone name: prefer 'destino' from service, fallback to existing fields
+    nombre: z.destino ?? z.nombre ?? z.nombre_ruta ?? "",
+    // description: include route name and origin when available
+    descripcion:
+      (z.nombre_ruta ? `Ruta: ${z.nombre_ruta}` : z.descripcion || "") +
+      (z.origen ? ` — Origen: ${z.origen}` : ""),
+    observaciones: z.observaciones ?? "",
+    // map service client info into a tiendas array so UI shows a related client
+    tiendas:
+      z.cliente_nombre || z.cliente_id
+        ? [
+            {
+              nombre: z.cliente_nombre ?? "",
+              contacto: "",
+              telefono: z.cliente_telefono ?? "",
+              direccion: z.destino ?? "",
+            },
+          ]
+        : (z.tiendas ?? []),
+    estado: z.estado
+      ? String(z.estado).charAt(0).toUpperCase() + String(z.estado).slice(1)
+      : "Activa",
+    // keep raw service fields for later use
+    clienteId: z.cliente_id ?? null,
+    rutaId: z.ruta_id ?? null,
+    fechaAsignacion: z.fecha_asignacion ?? null,
+    origen: z.origen ?? null,
+    destino: z.destino ?? null,
+    nombreRuta: z.nombre_ruta ?? null,
+  });
+
+  const fetchZones = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await zonasService.getAll();
+      const list = res?.data ?? res ?? [];
+      const mapped = Array.isArray(list) ? list.map(mapBackendToFrontend) : [];
+      setZones(mapped);
+    } catch (err) {
+      console.error(err);
+      setError("Error cargando zonas");
+    } finally {
+      setLoading(false);
+    }
+  };
   const buildFormFromZone = (zone) => ({
     nombreZona: zone.nombre,
     descripcion: zone.descripcion,
@@ -156,13 +169,11 @@ export default function Zones() {
     }
 
     const tiendasValidas = formData.tiendas.filter(
-      (t) => t.nombre.trim() && t.direccion.trim()
+      (t) => t.nombre.trim() && t.direccion.trim(),
     );
 
     if (!tiendasValidas.length) {
-      alert(
-        "Debe registrar al menos una tienda con nombre y dirección."
-      );
+      alert("Debe registrar al menos una tienda con nombre y dirección.");
       return false;
     }
 
@@ -181,56 +192,63 @@ export default function Zones() {
         telefono: t.telefono || "",
       }));
 
-    if (editingId) {
-      setZones((prev) =>
-        prev.map((z) =>
-          z.id === editingId
-            ? {
-                ...z,
-                nombre: formData.nombreZona,
-                descripcion: formData.descripcion,
-                observaciones: formData.observaciones,
-                tiendas: tiendasLimpias,
-              }
-            : z
-        )
-      );
-    } else {
-      const newId = zones.length
-        ? Math.max(...zones.map((z) => z.id)) + 1
-        : 1;
+    const payload = {
+      nombre: formData.nombreZona,
+      descripcion: formData.descripcion,
+      observaciones: formData.observaciones,
+      tiendas: tiendasLimpias,
+      estado: formData.estado || "Activa",
+    };
 
-      const nuevaZona = {
-        id: newId,
-        nombre: formData.nombreZona,
-        descripcion: formData.descripcion,
-        observaciones: formData.observaciones,
-        tiendas: tiendasLimpias,
-        estado: "Activa",
-      };
-
-      setZones((prev) => [...prev, nuevaZona]);
-    }
-
-    closeForm();
+    (async () => {
+      setSaving(true);
+      try {
+        if (editingId) {
+          await zonasService.update(editingId, payload);
+        } else {
+          await zonasService.create(payload);
+        }
+        await fetchZones();
+        closeForm();
+      } catch (err) {
+        console.error(err);
+        alert("Error guardando zona");
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
 
-  const deleteZone = (id) => {
+  const deleteZone = async (id) => {
     if (!confirm("¿Seguro que deseas eliminar esta zona?")) return;
-    setZones((prev) => prev.filter((z) => z.id !== id));
+    setSaving(true);
+    try {
+      await zonasService.delete(id);
+      await fetchZones();
+    } catch (err) {
+      console.error(err);
+      alert("Error eliminando zona");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleEstado = (id) => {
-    setZones((prev) =>
-      prev.map((z) =>
-        z.id === id
-          ? {
-              ...z,
-              estado: z.estado === "Activa" ? "Inactiva" : "Activa",
-            }
-          : z
-      )
-    );
+    (async () => {
+      setSaving(true);
+      try {
+        // call backend toggle (service expects id and estado)
+        const z = zones.find((x) => x.id === id);
+        const next = z && z.estado === "Activa" ? "Inactiva" : "Activa";
+        await zonasService.toggleEstado(id, next.toLowerCase());
+        await fetchZones();
+      } catch (err) {
+        console.error(err);
+        alert("Error cambiando estado");
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
 
   const estadoClasses = (estado) =>
@@ -259,7 +277,7 @@ export default function Zones() {
     if (isReadOnly) return;
     setFormData((prev) => {
       const tiendas = prev.tiendas.map((t, i) =>
-        i === index ? { ...t, [field]: value } : t
+        i === index ? { ...t, [field]: value } : t,
       );
       return { ...prev, tiendas };
     });
@@ -331,7 +349,7 @@ export default function Zones() {
                   <button
                     onClick={() => toggleEstado(z.id)}
                     className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition ${estadoClasses(
-                      z.estado
+                      z.estado,
                     )}`}
                   >
                     {z.estado}
@@ -385,7 +403,7 @@ export default function Zones() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredZones.length
+                  filteredZones.length,
                 )}`}{" "}
             de {filteredZones.length} zonas
           </span>
@@ -399,21 +417,19 @@ export default function Zones() {
               Anterior
             </button>
 
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-              (page) => (
-                <button
-                  key={page}
-                  onClick={() => goToPage(page)}
-                  className={`px-3 py-1 rounded-lg border border-neutral-700 ${
-                    page === currentPage
-                      ? "bg-green-600 text-black"
-                      : "bg-neutral-800 hover:bg-neutral-700"
-                  }`}
-                >
-                  {page}
-                </button>
-              )
-            )}
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => goToPage(page)}
+                className={`px-3 py-1 rounded-lg border border-neutral-700 ${
+                  page === currentPage
+                    ? "bg-green-600 text-black"
+                    : "bg-neutral-800 hover:bg-neutral-700"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
 
             <button
               onClick={() => goToPage(currentPage + 1)}
@@ -434,8 +450,8 @@ export default function Zones() {
               {isReadOnly
                 ? "Detalle de Zona"
                 : editingId
-                ? "Editar Zona"
-                : "Registrar Nueva Zona"}
+                  ? "Editar Zona"
+                  : "Registrar Nueva Zona"}
             </h3>
 
             <form
@@ -453,8 +469,7 @@ export default function Zones() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-neutral-300">
-                    Nombre de la Zona{" "}
-                    <span className="text-red-500">*</span>
+                    Nombre de la Zona <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"

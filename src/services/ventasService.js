@@ -33,8 +33,10 @@ export const ventasService = {
   },
 
   // Cambiar estado de venta
-  toggleEstado: async (id) => {
-    const response = await api.patch(`/ventas/${id}/estado`);
+  toggleEstado: async (id, estado) => {
+    const response = await api.patch(`/ventas/${id}/toggle-estado`, {
+      estado,
+    });
     return response.data;
   },
 

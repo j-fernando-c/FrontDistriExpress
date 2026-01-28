@@ -1,52 +1,50 @@
 // src/pages/Users.jsx
-import { useState } from "react";
-import {
-  FiSearch,
-  FiPlus,
-  FiEye,
-  FiEdit2,
-  FiTrash2,
-} from "react-icons/fi";
+import { useState, useEffect } from "react";
+import { FiSearch, FiPlus, FiEye, FiEdit2, FiTrash2 } from "react-icons/fi";
+
+import { usuariosService } from "../services/usuariosService";
+import { rolesService } from "../services/rolesService";
 
 export default function Users() {
-  const [users, setUsers] = useState([
-    {
-      id: 1,
-      fullName: "Juan Pérez",
-      email: "juan@empresa.com",
-      role: "Admin",
-      estado: "Protegido", // <-- admin comienza protegido
-      password: "123456",
-    },
-    {
-      id: 2,
-      fullName: "María González",
-      email: "maria@empresa.com",
-      role: "Vendedor",
-      estado: "Activo",
-      password: "123456",
-    },
-    {
-      id: 3,
-      fullName: "Carlos López",
-      email: "carlos@empresa.com",
-      role: "Empleado",
-      estado: "Inactivo",
-      password: "123456",
-    },
-  ]);
+  const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewMode, setIsViewMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await Promise.all([fetchUsers(), loadRoles()]);
+    } catch (err) {
+      setError(err.message || "Error al cargar datos");
+      console.error("Error cargando datos iniciales:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const emptyForm = {
+    tipo_documento: "",
+    documento: "",
     fullName: "",
     email: "",
     password: "",
     role: "",
-    estado: "Activo",
+    roleId: "",
+    telefono: "",
+    direccion: "",
+    estado: "activo",
   };
 
   const [formData, setFormData] = useState(emptyForm);
@@ -58,24 +56,72 @@ export default function Users() {
 
   const filteredUsers = users.filter(
     (u) =>
-      u.fullName.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
+      (u.fullName || u.nombre || "")
+        .toLowerCase()
+        .includes(search.toLowerCase()) ||
+      (u.email || "").toLowerCase().includes(search.toLowerCase()),
   );
+
+  const loadRoles = async () => {
+    try {
+      const response = await rolesService.getAll();
+      setRoles(response.data || []);
+    } catch (err) {
+      console.error("Error cargando roles:", err);
+    }
+  };
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredUsers.length / itemsPerPage)
+    Math.ceil(filteredUsers.length / itemsPerPage),
   );
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedUsers = filteredUsers.slice(
     startIndex,
-    startIndex + itemsPerPage
+    startIndex + itemsPerPage,
   );
 
   const handleSearchChange = (e) => {
     setSearch(e.target.value);
     setCurrentPage(1);
   };
+
+  const mapBackendToFrontend = (u) => ({
+    id: u.id ?? u._id,
+    tipo_documento: u.tipo_documento ?? "",
+    documento: u.documento ?? "",
+    fullName: u.nombre ?? u.fullName ?? "",
+    email: u.email ?? "",
+    role: u.rol_nombre ?? u.rol?.name ?? u.role ?? "",
+    roleId: u.rol_id ?? "",
+    telefono: u.telefono ?? "",
+    direccion: u.direccion ?? "",
+    // normalize backend estado to only Active/Inactive (capitalize for UI)
+    estado:
+      typeof u.estado === "string" && u.estado.toLowerCase() === "activo"
+        ? "activo"
+        : "inactivo",
+    // never expose password from backend
+    password: "",
+  });
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await usuariosService.getAll();
+      const list = data?.data ?? data ?? [];
+      const mapped = Array.isArray(list) ? list.map(mapBackendToFrontend) : [];
+      setUsers(mapped);
+    } catch (err) {
+      console.error(err);
+      setError("Error cargando usuarios");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // roles state is initialized above; loadRoles will populate it
 
   const goToPage = (page) => {
     if (page < 1 || page > totalPages) return;
@@ -95,10 +141,15 @@ export default function Users() {
     setIsViewMode(false);
     setEditingId(user.id);
     setFormData({
+      tipo_documento: user.tipo_documento ?? user.tipo_documento ?? "",
+      documento: user.documento ?? "",
       fullName: user.fullName,
       email: user.email,
       password: user.password || "",
       role: user.role,
+      roleId: user.roleId || user.roleId || user.roleId,
+      telefono: user.telefono ?? "",
+      direccion: user.direccion ?? "",
       estado: user.estado,
     });
     setErrors({});
@@ -109,10 +160,15 @@ export default function Users() {
     setIsViewMode(true);
     setEditingId(user.id);
     setFormData({
+      tipo_documento: user.tipo_documento ?? "",
+      documento: user.documento ?? "",
       fullName: user.fullName,
       email: user.email,
       password: user.password || "",
       role: user.role,
+      roleId: user.roleId ?? "",
+      telefono: user.telefono ?? "",
+      direccion: user.direccion ?? "",
       estado: user.estado,
     });
     setErrors({});
@@ -129,10 +185,23 @@ export default function Users() {
   // ===== Form =====
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    if (name === "roleId") {
+      const selected = roles.find((r) => r.id === value);
+      setFormData((prev) => ({
+        ...prev,
+        roleId: value,
+        role: selected ? selected.nombre_rol || selected.nombre : "",
+      }));
+      return;
+    }
+
+    if (name === "estado") {
+      // keep estado lowercase in state (activo/inactivo)
+      setFormData((prev) => ({ ...prev, [name]: String(value).toLowerCase() }));
+      return;
+    }
+
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const validate = () => {
@@ -148,14 +217,20 @@ export default function Users() {
       newErrors.email = "El email no es válido";
     }
 
-    if (!editingId || !formData.password.trim()) {
-      // Si es usuario nuevo, SIEMPRE; si es edición, solo si lo deja vacío
+    // Contraseña: para creación es obligatoria y debe tener al menos 6 caracteres
+    if (!editingId) {
       if (!formData.password.trim()) {
         newErrors.password = "La contraseña es obligatoria";
+      } else if (formData.password.trim().length < 6) {
+        newErrors.password = "La contraseña debe tener al menos 6 caracteres";
+      }
+    } else if (formData.password && formData.password.trim().length > 0) {
+      if (formData.password.trim().length < 6) {
+        newErrors.password = "La contraseña debe tener al menos 6 caracteres";
       }
     }
 
-    if (!formData.role) {
+    if (!formData.roleId) {
       newErrors.role = "El rol es obligatorio";
     }
 
@@ -163,59 +238,54 @@ export default function Users() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (isViewMode) return; // por seguridad
 
     if (!validate()) return;
 
-    const data = {
-      fullName: formData.fullName.trim(),
-      email: formData.email.trim(),
-      password: formData.password.trim(),
-      role: formData.role,
-      estado: formData.estado,
-    };
+    setSaving(true);
+    try {
+      const data = {
+        tipo_documento: formData.tipo_documento || undefined,
+        documento: formData.documento || undefined,
+        nombre: formData.fullName.trim(),
+        email: formData.email.trim(),
+        telefono: formData.telefono || undefined,
+        direccion: formData.direccion || undefined,
+        rol_id: formData.roleId,
+        estado: formData.estado || "activo",
+      };
 
-    // Forzar protección si el rol es Admin
-    if (data.role === "Admin") {
-      data.estado = "Protegido";
+      // incluir contraseña solo si existe
+      if (formData.password && formData.password.trim()) {
+        data.contrasena = formData.password.trim();
+      }
+
+      // Admin remains protected from toggles/deletes in UI; send estado as lowercase
+      if (data.estado) data.estado = data.estado.toLowerCase();
+
+      if (editingId) {
+        await usuariosService.update(editingId, data);
+      } else {
+        // backend requires contrasena for create
+        if (!data.contrasena) {
+          throw new Error("La contraseña es obligatoria para crear usuario");
+        }
+        await usuariosService.create(data);
+      }
+
+      await fetchUsers();
+      closeModal();
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Error al guardar usuario");
+    } finally {
+      setSaving(false);
     }
-
-    if (editingId) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === editingId
-            ? {
-                ...u,
-                ...data,
-                // si ya era admin, seguir protegido
-                estado:
-                  u.role === "Admin" || data.role === "Admin"
-                    ? "Protegido"
-                    : data.estado,
-              }
-            : u
-        )
-      );
-    } else {
-      const newId = users.length
-        ? Math.max(...users.map((u) => u.id)) + 1
-        : 1;
-      setUsers((prev) => [
-        ...prev,
-        {
-          id: newId,
-          ...data,
-          estado: data.role === "Admin" ? "Protegido" : data.estado,
-        },
-      ]);
-    }
-
-    closeModal();
   };
 
-  const deleteUser = (id) => {
+  const deleteUser = async (id) => {
     const user = users.find((u) => u.id === id);
     if (user && user.role === "Admin") {
       alert("El usuario administrador está protegido y no se puede eliminar.");
@@ -223,23 +293,38 @@ export default function Users() {
     }
 
     if (!confirm("¿Seguro que deseas eliminar este usuario?")) return;
-    setUsers((prev) => prev.filter((u) => u.id !== id));
+    try {
+      await usuariosService.delete(id);
+      await fetchUsers();
+    } catch (err) {
+      console.error(err);
+      alert("Error eliminando usuario");
+    }
   };
 
-  const toggleEstado = (id) => {
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id !== id) return u;
-        if (u.role === "Admin") {
-          // Admin no cambia de estado
-          return { ...u, estado: "Protegido" };
-        }
-        return {
-          ...u,
-          estado: u.estado === "Activo" ? "Inactivo" : "Activo",
-        };
-      })
-    );
+  const toggleEstado = async (id) => {
+    const user = users.find((u) => u.id === id);
+    if (!user) return;
+    if (
+      (user.role || "").toLowerCase() === "administrador" ||
+      user.role === "Admin"
+    )
+      return;
+
+    const newEstado =
+      user.estado === "activo" || (user.estado || "").toLowerCase() === "activo"
+        ? "inactivo"
+        : "activo";
+    try {
+      // send lowercase to backend (ej. 'activo'/'inactivo')
+      await usuariosService.toggleEstado(id, newEstado.toLowerCase());
+      setUsers((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, estado: newEstado } : u)),
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Error cambiando estado");
+    }
   };
 
   const inputBase =
@@ -296,36 +381,42 @@ export default function Users() {
           </thead>
 
           <tbody className="text-sm text-neutral-200">
+            {loading && (
+              <tr>
+                <td colSpan={5} className="p-6 text-center text-neutral-400">
+                  {error ? error : "Cargando usuarios..."}
+                </td>
+              </tr>
+            )}
             {paginatedUsers.map((user) => {
-              const isAdmin = user.role === "Admin";
-              const isProtegido = isAdmin || user.estado === "Protegido";
+              const isAdmin =
+                (user.role || "").toLowerCase() === "administrador" ||
+                (user.role || "") === "Admin";
+
+              const estadoIsactivo =
+                (user.estado || "").toLowerCase() === "activo" ||
+                (user.estado || "") === "activo";
 
               return (
                 <tr
                   key={user.id}
                   className="border-t border-neutral-700 hover:bg-neutral-800/50 transition"
                 >
-                  <td className="p-3">{user.fullName}</td>
+                  <td className="p-3">{user.fullName || user.nombre}</td>
                   <td className="p-3">{user.email}</td>
                   <td className="p-3">{user.role}</td>
                   <td className="p-3">
-                    {isProtegido ? (
-                      <span className="px-4 py-1.5 rounded-full text-sm font-semibold shadow bg-neutral-500 text-black cursor-not-allowed">
-                        Protegido
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => toggleEstado(user.id)}
-                        className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow cursor-pointer transition
-                      ${
-                        user.estado === "Activo"
+                    <button
+                      onClick={() => !isAdmin && toggleEstado(user.id)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow ${isAdmin ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:scale-[1.01] transition"} ${
+                        estadoIsactivo
                           ? "bg-green-600 text-black hover:bg-green-500"
                           : "bg-red-600 text-black hover:bg-red-500"
                       }`}
-                      >
-                        {user.estado}
-                      </button>
-                    )}
+                      disabled={isAdmin}
+                    >
+                      {user.estado}
+                    </button>
                   </td>
                   <td className="p-3">
                     <div className="flex justify-center gap-3">
@@ -349,9 +440,7 @@ export default function Users() {
                             ? "bg-neutral-700 cursor-not-allowed opacity-60"
                             : "bg-red-600 hover:bg-red-500"
                         }`}
-                        onClick={() =>
-                          !isAdmin && deleteUser(user.id)
-                        }
+                        onClick={() => !isAdmin && deleteUser(user.id)}
                         disabled={isAdmin}
                       >
                         <FiTrash2 className="text-lg" />
@@ -364,10 +453,7 @@ export default function Users() {
 
             {paginatedUsers.length === 0 && (
               <tr>
-                <td
-                  colSpan={5}
-                  className="p-4 text-center text-neutral-400"
-                >
+                <td colSpan={5} className="p-4 text-center text-neutral-400">
                   No se encontraron usuarios.
                 </td>
               </tr>
@@ -383,7 +469,7 @@ export default function Users() {
               ? "0"
               : `${startIndex + 1}–${Math.min(
                   startIndex + itemsPerPage,
-                  filteredUsers.length
+                  filteredUsers.length,
                 )}`}{" "}
             de {filteredUsers.length} usuarios
           </span>
@@ -397,21 +483,19 @@ export default function Users() {
               Anterior
             </button>
 
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-              (page) => (
-                <button
-                  key={page}
-                  onClick={() => goToPage(page)}
-                  className={`px-3 py-1 rounded-lg border border-neutral-700 ${
-                    page === currentPage
-                      ? "bg-green-600 text-black"
-                      : "bg-neutral-800 hover:bg-neutral-700"
-                  }`}
-                >
-                  {page}
-                </button>
-              )
-            )}
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => goToPage(page)}
+                className={`px-3 py-1 rounded-lg border border-neutral-700 ${
+                  page === currentPage
+                    ? "bg-green-600 text-black"
+                    : "bg-neutral-800 hover:bg-neutral-700"
+                }`}
+              >
+                {page}
+              </button>
+            ))}
 
             <button
               onClick={() => goToPage(currentPage + 1)}
@@ -433,8 +517,8 @@ export default function Users() {
                 {isViewMode
                   ? "Ver Usuario"
                   : editingId
-                  ? "Editar Usuario"
-                  : "Registrar Nuevo Usuario"}
+                    ? "Editar Usuario"
+                    : "Registrar Nuevo Usuario"}
               </h3>
               <button
                 onClick={closeModal}
@@ -446,11 +530,44 @@ export default function Users() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid md:grid-cols-2 gap-4">
+                {/* Tipo documento */}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300">
+                    Tipo Documento
+                  </label>
+                  <input
+                    type="text"
+                    name="tipo_documento"
+                    className={`${inputBase} ${isViewMode ? disabledInput : ""}`}
+                    placeholder="CC, NIT, etc."
+                    value={formData.tipo_documento}
+                    onChange={handleChange}
+                    disabled={isViewMode}
+                  />
+                </div>
+
+                {/* Documento */}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300">
+                    Documento
+                  </label>
+                  <input
+                    type="text"
+                    name="documento"
+                    className={`${inputBase} ${isViewMode ? disabledInput : ""}`}
+                    placeholder="Número de documento"
+                    value={formData.documento}
+                    onChange={handleChange}
+                    disabled={isViewMode}
+                  />
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
                 {/* Nombre */}
                 <div>
                   <label className="block text-sm font-medium text-neutral-300">
-                    Nombre Completo{" "}
-                    <span className="text-red-500">*</span>
+                    Nombre Completo <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -487,9 +604,7 @@ export default function Users() {
                     disabled={isViewMode}
                   />
                   {errors.email && (
-                    <p className="text-xs text-red-400 mt-1">
-                      {errors.email}
-                    </p>
+                    <p className="text-xs text-red-400 mt-1">{errors.email}</p>
                   )}
                 </div>
               </div>
@@ -498,8 +613,7 @@ export default function Users() {
                 {/* Contraseña */}
                 <div>
                   <label className="block text-sm font-medium text-neutral-300">
-                    Contraseña{" "}
-                    <span className="text-red-500">*</span>
+                    Contraseña <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="password"
@@ -525,25 +639,56 @@ export default function Users() {
                     Rol <span className="text-red-500">*</span>
                   </label>
                   <select
-                    name="role"
-                    className={`${inputBase} ${
-                      errors.role ? "border-red-500" : ""
-                    } ${isViewMode ? disabledInput : ""}`}
-                    value={formData.role}
+                    name="roleId"
+                    className={`${inputBase} ${errors.role ? "border-red-500" : ""} ${isViewMode ? disabledInput : ""}`}
+                    value={formData.roleId}
                     onChange={handleChange}
                     disabled={isViewMode}
                   >
                     <option value="">Seleccionar rol...</option>
-                    <option value="Admin">Admin</option>
-                    <option value="Vendedor">Vendedor</option>
-                    <option value="Repartidor">Repartidor</option>
-                    <option value="Gerente">Gerente</option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.nombre_rol ?? r.nombre ?? r.nombreRol ?? r.nombreRol}
+                      </option>
+                    ))}
                   </select>
                   {errors.role && (
-                    <p className="text-xs text-red-400 mt-1">
-                      {errors.role}
-                    </p>
+                    <p className="text-xs text-red-400 mt-1">{errors.role}</p>
                   )}
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* Telefono */}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300">
+                    Teléfono
+                  </label>
+                  <input
+                    type="text"
+                    name="telefono"
+                    className={`${inputBase} ${isViewMode ? disabledInput : ""}`}
+                    placeholder="Teléfono"
+                    value={formData.telefono}
+                    onChange={handleChange}
+                    disabled={isViewMode}
+                  />
+                </div>
+
+                {/* Direccion */}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-300">
+                    Dirección
+                  </label>
+                  <input
+                    type="text"
+                    name="direccion"
+                    className={`${inputBase} ${isViewMode ? disabledInput : ""}`}
+                    placeholder="Dirección"
+                    value={formData.direccion}
+                    onChange={handleChange}
+                    disabled={isViewMode}
+                  />
                 </div>
               </div>
 
@@ -558,19 +703,18 @@ export default function Users() {
                     className={`${inputBase} ${
                       isViewMode ? disabledInput : ""
                     }`}
-                    value={formData.role === "Admin" ? "Protegido" : formData.estado}
+                    value={formData.estado}
                     onChange={handleChange}
-                    disabled={isViewMode || formData.role === "Admin"}
+                    disabled={
+                      isViewMode ||
+                      (formData.role || "").toLowerCase() === "administrador" ||
+                      formData.role === "Admin"
+                    }
                   >
-                    {/* Para admin mostramos Protegido fijo */}
-                    {formData.role === "Admin" ? (
-                      <option value="Protegido">Protegido</option>
-                    ) : (
-                      <>
-                        <option value="Activo">Activo</option>
-                        <option value="Inactivo">Inactivo</option>
-                      </>
-                    )}
+                    <>
+                      <option value="activo">activo</option>
+                      <option value="inactivo">inactivo</option>
+                    </>
                   </select>
                 </div>
               </div>
@@ -588,9 +732,14 @@ export default function Users() {
                 {!isViewMode && (
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-green-600 hover:bg-green-500 text-black font-semibold rounded-xl transition"
+                    className="px-5 py-2 bg-green-600 hover:bg-green-500 text-black font-semibold rounded-xl transition disabled:opacity-50"
+                    disabled={saving}
                   >
-                    {editingId ? "Guardar cambios" : "Registrar usuario"}
+                    {saving
+                      ? "Guardando..."
+                      : editingId
+                        ? "Guardar cambios"
+                        : "Registrar usuario"}
                   </button>
                 )}
               </div>
